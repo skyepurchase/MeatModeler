@@ -34,36 +34,5 @@ class ImageProcessor:
 
         return self.path
 
-    def recreateVideo(self):
-        """
-        Reconstructs the video from the non-blurred images
-
-        :return: The input folder contains the non-blurred video
-        """
-        filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Input\\UnblurredVideo.avi"
-
-        img_array = []
-        size = (500, 500)
-
-        for img in os.listdir(self.path):
-            src = cv2.imread(os.path.join(self.path, img))
-
-            if src is None:
-                print("Error loading image!")
-                print(img)
-                break
-
-            height, width, layers = src.shape
-            size = (width, height)
-            img_array.append(src)
-
-        out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'DIVX'), 30, size)
-
-        img_array.reverse()
-        for img in img_array:
-            out.write(img)
-
-        out.release()
-
     def getPath(self):
         return self.path
