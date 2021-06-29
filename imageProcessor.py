@@ -1,5 +1,4 @@
 import cv2
-import os
 
 
 class ImageProcessor:
@@ -23,16 +22,15 @@ class ImageProcessor:
         current_frame = 0
         image_number = 0
 
-        ret, frame = cap.read()
-        while ret:
-            if self.canSample(current_frame, image_number, total_frames):
-                if self.isBlurry(frame):
-                    filename = self.path + "Frame" + str(image_number) + ".jpg"
-                    cv2.imwrite(filename, frame)
-                    image_number += 1
+        success, frame = cap.read()
+        while success and image_number != self.image_count:
+            if self.canSample(current_frame, image_number, total_frames) and self.isBlurry(frame):
+                filename = self.path + "Frame" + str(image_number) + ".jpg"
+                cv2.imwrite(filename, frame)
+                image_number += 1
 
             current_frame += 1
-            ret, frame = cap.read()
+            success, frame = cap.read()
 
         return self.path
 
@@ -47,6 +45,9 @@ class ImageProcessor:
         """
         # This greedy approach concentrates samples near the end
         # TODO: Find potentially better heuristic
+
+        if image_number == self.image_count:
+            return False
 
         frame_gap = (total_frames - current_frame) / (self.image_count - image_number)
         if current_frame < image_number * frame_gap:
