@@ -1,10 +1,12 @@
+import os
+import numpy as np
 import cv2
 
 
 class ImageProcessor:
     def __init__(self, path, count, threshold=5):
         self.path = path
-        self.image_count = count
+        self.image_count = count + 1  # Because of indexing errors
         self.threshold = threshold
 
     def split(self, video_path):
@@ -14,9 +16,6 @@ class ImageProcessor:
         :param video_path: Fully qualified path to the video to be split.
         :return: Fully qualified path to the file containing the split frames.
         """
-        # for file in os.listdir(self.path):
-        #     os.remove(os.path.join(self.path, file))  # Remove the current images
-
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         current_frame = 0
@@ -24,6 +23,8 @@ class ImageProcessor:
 
         success, frame = cap.read()
         while success and image_number != self.image_count:
+            frame = cv2.cvtColor(self.increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+
             if self.canSample(current_frame, image_number, total_frames) and self.isBlurry(frame):
                 filename = self.path + "Frame" + str(image_number) + ".jpg"
                 cv2.imwrite(filename, frame)
@@ -63,13 +64,22 @@ class ImageProcessor:
         :return: A boolean value representing whether the frame is blurred or not
         """
         src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
-        src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
-        value = cv2.Laplacian(src_gray, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
+        value = cv2.Laplacian(src, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
 
         if value > self.threshold:  # Suggests the edges are defined
             return True
 
         return False
+
+    def increaseContrast(self, frame):
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        l_out = clahe.apply(l)
+        lab_out = cv2.merge((l_out, a, b))
+
+        return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
     def getPath(self):
         return self.path
