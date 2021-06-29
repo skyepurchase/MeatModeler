@@ -18,44 +18,57 @@ class ImageProcessor:
         # for file in os.listdir(self.path):
         #     os.remove(os.path.join(self.path, file))  # Remove the current images
 
-        cam = cv2.VideoCapture(video_path)
-        total_frames = int(cam.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_gap = int(total_frames / self.image_count)
-
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         current_frame = 0
-        current_frame_offset = 0
+        image_number = 0
 
-        frame_number = 0
-        frame_number_offset = 0
-
-        ret, frame = cam.read()
+        ret, frame = cap.read()
         while ret:
-            adjusted_frame_number = frame_number - frame_number_offset
-            adjusted_current_frame = current_frame - current_frame_offset
-
-            if adjusted_current_frame > adjusted_frame_number * frame_gap:  # If the sample is coming from the right gap
-
-                if adjusted_current_frame >= (adjusted_frame_number + 1) * frame_gap:
-                    # An entire gap was too blurry -> readjust future choices to get enough samples
-                    # Heuristic favours later images, can mean not enough samples chosen or object not covered
-                    # TODO: Find a better heuristic that doesn't require processing every image
-                    frame_gap = int((total_frames - current_frame) / (self.image_count - frame_number))
-                    frame_number_offset = frame_number
-                    current_frame_offset = current_frame
-
-                src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
-                src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
-                value = cv2.Laplacian(src_gray, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
-
-                if value > self.threshold:  # Suggests the edges are very weak and thus blurry
-                    filename = self.path + "Frame" + str(frame_number) + ".jpg"
+            if self.canSample(current_frame, image_number, total_frames):
+                if self.isBlurry(frame):
+                    filename = self.path + "Frame" + str(image_number) + ".jpg"
                     cv2.imwrite(filename, frame)
-                    frame_number += 1
+                    image_number += 1
 
             current_frame += 1
-            ret, frame = cam.read()
+            ret, frame = cap.read()
 
         return self.path
+
+    def canSample(self, current_frame, image_number, total_frames):
+        """
+        Determines whether the current frame can be sampled
+
+        :param current_frame: The index of the frame being assessed
+        :param image_number: The number of images chosen
+        :param total_frames: Total number of possible frames
+        :return: A boolean representing whether the frame can be sampled
+        """
+        # This greedy approach concentrates samples near the end
+        # TODO: Find potentially better heuristic
+
+        frame_gap = (total_frames - current_frame) / (self.image_count - image_number)
+        if current_frame < image_number * frame_gap:
+            return False  # Current frame is before the sampling gap
+
+        return True
+
+    def isBlurry(self, frame):
+        """
+        Determines whether a given frame is too blurry for further processing
+
+        :param frame: The video frame to be assessed
+        :return: A boolean value representing whether the frame is blurred or not
+        """
+        src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
+        src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+        value = cv2.Laplacian(src_gray, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
+
+        if value > self.threshold:  # Suggests the edges are defined
+            return True
+
+        return False
 
     def getPath(self):
         return self.path
