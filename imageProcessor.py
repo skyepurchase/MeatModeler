@@ -1,13 +1,12 @@
-import os
-import numpy as np
 import cv2
 
 
 class ImageProcessor:
-    def __init__(self, path, count, threshold=5):
+    def __init__(self, path, count, blur_threshold=5, clahe_threshold=3.5):
         self.path = path
         self.image_count = count + 1  # Because of indexing errors
-        self.threshold = threshold
+        self.blur_threshold = blur_threshold
+        self.clahe_threshold = clahe_threshold
 
     def split(self, video_path):
         """
@@ -66,7 +65,7 @@ class ImageProcessor:
         src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
         value = cv2.Laplacian(src, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
 
-        if value > self.threshold:  # Suggests the edges are defined
+        if value > self.blur_threshold:  # Suggests the edges are defined
             return True
 
         return False
@@ -75,7 +74,7 @@ class ImageProcessor:
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
 
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=self.clahe_threshold, tileGridSize=(8, 8))
         l_out = clahe.apply(l)
         lab_out = cv2.merge((l_out, a, b))
 
