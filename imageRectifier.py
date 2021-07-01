@@ -56,15 +56,18 @@ class ImageRectifier:
         pts2 = np.int32(pts2)
         F, mask = cv.findFundamentalMat(pts1, pts2, cv.FM_LMEDS)
 
-        # We select only inlier points
-        pts1 = pts1[mask.ravel() == 1]
-        pts2 = pts2[mask.ravel() == 1]
+        if F is not None:
+            # We select only inlier points
+            pts1 = pts1[mask.ravel() == 1]
+            pts2 = pts2[mask.ravel() == 1]
 
         return F, pts1, pts2
 
     def drawEpilines(self, img1, img2, data=None):
         if data is None or len(data) != 3:
             F, pts1, pts2 = self.calculateF(img1, img2)
+            if F is None:
+                return None
         else:
             F, pts1, pts2 = data
 
@@ -82,6 +85,9 @@ class ImageRectifier:
         img1 = cv.imread(src1)
         img2 = cv.imread(src2)
         F, pts1, pts2 = self.calculateF(img1, img2)
+
+        if F is None:
+            return None
 
         success, H1, H2 = cv.stereoRectifyUncalibrated(pts1, pts2, F, (img1.shape[1], img2.shape[0]))
         H1_inv = np.linalg.inv(H1)
