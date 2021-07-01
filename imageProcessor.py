@@ -63,9 +63,9 @@ class ImageProcessor:
         :param frame: The video frame to be assessed
         :return: A boolean value representing whether the frame is blurred or not
         """
-        value = imageRectifier.getDescriptors(frame)
+        keypoints, _ = imageRectifier.getDescriptors(frame)
 
-        if value < self.suitability_threshold:  # Suggests the edges are not defined
+        if len(keypoints) < self.suitability_threshold:  # Suggests the edges are not defined
             return False
 
         return True
