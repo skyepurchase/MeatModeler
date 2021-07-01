@@ -3,7 +3,7 @@ import cv2
 
 
 def getDescriptors(img):
-    sift = cv.SIFT_create()
+    sift = cv2.SIFT_create()
     keypoints, descriptors = sift.detectAndCompute(img, None)
 
     return keypoints, descriptors
