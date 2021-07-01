@@ -5,6 +5,7 @@ import cv2
 def getDescriptors(img):
     sift = cv2.SIFT_create()
     keypoints, descriptors = sift.detectAndCompute(img, None)
+    print(descriptors)
 
     return keypoints, descriptors
 
@@ -59,12 +60,15 @@ class ImageRectifier:
 
             img1_wrap = cv2.warpPerspective(img1, H1, (img1.shape[1], img1.shape[0]))
             img2_wrap = cv2.warpPerspective(img2, H2, (img2.shape[1], img2.shape[0]))
-            img2_mosaic = cv2.warpPerspective(img2_wrap, H1_inv, (img2_wrap.shape[1], img2_wrap.shape[0]))
+            img2_mosaic = cv2.warpPerspective(img2_wrap, H1_inv, (img1.shape[1], img1.shape[0]))
+            mosaic = cv2.addWeighted(img1, 0.5, img2_mosaic, 0.5, 0)
 
             name1 = src1.split("\\")[-1].split(".")[0]
             name2 = src2.split("\\")[-1].split(".")[0]
+            filename = self.path + "Mosaics\\" + name1 + "-" + name2 + ".jpg"
             filenameL = self.path + name1 + "-" + name2 + "-L.jpg"
             filenameR = self.path + name1 + "-" + name2 + "-R.jpg"
+            cv2.imwrite(filename, mosaic)
             cv2.imwrite(filenameL, img1_wrap)
             cv2.imwrite(filenameR, img2_wrap)
 
