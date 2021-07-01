@@ -1,12 +1,13 @@
 import cv2
+import imageRectifier
 
 
 class ImageProcessor:
-    def __init__(self, path, count, blur_threshold=5, clahe_threshold=1):
+    def __init__(self, path, count, suitability_threshold=5, contrast_threshold=1):
         self.path = path
         self.image_count = count + 1  # Because of indexing errors
-        self.blur_threshold = blur_threshold
-        self.clahe_threshold = clahe_threshold
+        self.suitability_threshold = suitability_threshold
+        self.contrast_threshold = contrast_threshold
 
     def split(self, video_path):
         """
@@ -24,7 +25,7 @@ class ImageProcessor:
         while success and image_number != self.image_count:
             frame = cv2.cvtColor(self.increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
-            if self.canSample(current_frame, image_number, total_frames) and not self.isBlurry(frame):
+            if self.canSample(current_frame, image_number, total_frames) and self.isSuitable(frame):
                 filename = self.path + "Frame" + str(image_number) + ".jpg"
                 cv2.imwrite(filename, frame)
                 image_number += 1
@@ -55,20 +56,19 @@ class ImageProcessor:
 
         return True
 
-    def isBlurry(self, frame):
+    def isSuitable(self, frame):
         """
         Determines whether a given frame is too blurry for further processing
 
         :param frame: The video frame to be assessed
         :return: A boolean value representing whether the frame is blurred or not
         """
-        src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
-        value = cv2.Laplacian(src, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
+        value = imageRectifier.getDescriptors(frame)
 
-        if value < self.blur_threshold:  # Suggests the edges are not defined
-            return True
+        if value < self.suitability_threshold:  # Suggests the edges are not defined
+            return False
 
-        return False
+        return True
 
     def increaseContrast(self, frame):
         """
@@ -80,7 +80,7 @@ class ImageProcessor:
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
 
-        clahe = cv2.createCLAHE(clipLimit=self.clahe_threshold, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=self.contrast_threshold, tileGridSize=(8, 8))
         l_out = clahe.apply(l)
         lab_out = cv2.merge((l_out, a, b))
 
