@@ -71,6 +71,12 @@ class ImageProcessor:
         return False
 
     def increaseContrast(self, frame):
+        """
+        Increases the contrast of the grey scale images by applying CLAHE to the luminance
+
+        :param frame: The frame to be editted
+        :return: The increased contrast image
+        """
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
 
