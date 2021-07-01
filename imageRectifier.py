@@ -89,20 +89,29 @@ class ImageRectifier:
         if F is None:
             return None
 
-        success, H1, H2 = cv.stereoRectifyUncalibrated(pts1, pts2, F, (img1.shape[1], img1.shape[0]))
-        H1_inv = np.linalg.inv(H1)
+        try:
+            success, H1, H2 = cv.stereoRectifyUncalibrated(pts1, pts2, F, (img1.shape[1], img1.shape[0]))
+            H1_inv = np.linalg.inv(H1)
 
-        if display_lines:
-            img1, img2 = self.drawEpilines(img1, img2, (F, pts1, pts2))
+            if display_lines:
+                img1, img2 = self.drawEpilines(img1, img2, (F, pts1, pts2))
 
-        img1_wrap = cv.warpPerspective(img1, H1, (img1.shape[1], img1.shape[0]))
-        img2_wrap = cv.warpPerspective(img2, H2, (img2.shape[1], img2.shape[0]))
-        img2_mosaic = cv.warpPerspective(img2_wrap, H1_inv, (img2_wrap.shape[1], img2_wrap.shape[0]))
-        mosaic = cv.addWeighted(img1, 0.5, img2_mosaic, 0.5, 0)
+            img1_wrap = cv.warpPerspective(img1, H1, (img1.shape[1], img1.shape[0]))
+            img2_wrap = cv.warpPerspective(img2, H2, (img2.shape[1], img2.shape[0]))
+            img2_mosaic = cv.warpPerspective(img2_wrap, H1_inv, (img2_wrap.shape[1], img2_wrap.shape[0]))
+            mosaic = cv.addWeighted(img1, 0.5, img2_mosaic, 0.5, 0)
 
-        name1 = src1.split("\\")[-1].split(".")[0]
-        name2 = src2.split("\\")[-1].split(".")[0]
-        filename = self.path + name1 + "-" + name2 + "-mosaic.jpg"
-        cv.imwrite(filename, mosaic)
+            name1 = src1.split("\\")[-1].split(".")[0]
+            name2 = src2.split("\\")[-1].split(".")[0]
+            filename = self.path + "Mosaics\\" + name1 + "-" + name2 + "-mosaic.jpg"
+            filenameL = self.path + name1 + "-" + name2 + "-L.jpg"
+            filenameR = self.path + name1 + "-" + name2 + "-R.jpg"
+            cv.imwrite(filename, mosaic)
+            cv.imwrite(filenameL, img1_wrap)
+            cv.imwrite(filenameR, img2_wrap)
 
-        return img1_wrap, img2_wrap, mosaic
+            return img1_wrap, img2_wrap, mosaic
+        except cv.error as e:
+            # TODO: Deal with this mismatch error
+            print(e)
+            return None
