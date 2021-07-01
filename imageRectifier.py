@@ -89,7 +89,7 @@ class ImageRectifier:
         if F is None:
             return None
 
-        success, H1, H2 = cv.stereoRectifyUncalibrated(pts1, pts2, F, (img1.shape[1], img2.shape[0]))
+        success, H1, H2 = cv.stereoRectifyUncalibrated(pts1, pts2, F, (img1.shape[1], img1.shape[0]))
         H1_inv = np.linalg.inv(H1)
 
         if display_lines:
