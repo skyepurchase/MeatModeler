@@ -20,16 +20,22 @@ def drawlines(img1, img2, lines, pts_in1, pts_in2):
     return img1, img2
 
 
+def getDescriptors(img):
+    sift = cv.SIFT_create()
+    keypoints, descriptors = sift.detectAndCompute(img, None)
+
+    return keypoints, descriptors
+
+
 class ImageRectifier:
     def __init__(self, path):
         self.path = path
-        self.sift = cv.SIFT_create()
 
     def calculateF(self, img1, img2):
 
         # find the keypoints and descriptors with SIFT
-        kp1, des1 = self.getDescriptors(img1)
-        kp2, des2 = self.getDescriptors(img2)
+        kp1, des1 = getDescriptors(img1)
+        kp2, des2 = getDescriptors(img2)
 
         # FLANN parameters
         FLANN_INDEX_KDTREE = 1
@@ -55,12 +61,6 @@ class ImageRectifier:
         pts2 = pts2[mask.ravel() == 1]
 
         return F, pts1, pts2
-
-    def getDescriptors(self, img):
-        keypoints, descriptors = self.sift.detectAndCompute(img, None)
-
-        return keypoints, descriptors
-
 
     def drawEpilines(self, img1, img2, data=None):
         if data is None or len(data) != 3:
