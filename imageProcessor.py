@@ -2,7 +2,7 @@ import cv2
 
 
 class ImageProcessor:
-    def __init__(self, path, count, blur_threshold=5, clahe_threshold=3.5):
+    def __init__(self, path, count, blur_threshold=5, clahe_threshold=1):
         self.path = path
         self.image_count = count + 1  # Because of indexing errors
         self.blur_threshold = blur_threshold
@@ -24,7 +24,7 @@ class ImageProcessor:
         while success and image_number != self.image_count:
             frame = cv2.cvtColor(self.increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
-            if self.canSample(current_frame, image_number, total_frames) and self.isBlurry(frame):
+            if self.canSample(current_frame, image_number, total_frames) and not self.isBlurry(frame):
                 filename = self.path + "Frame" + str(image_number) + ".jpg"
                 cv2.imwrite(filename, frame)
                 image_number += 1
@@ -65,7 +65,7 @@ class ImageProcessor:
         src = cv2.GaussianBlur(frame, (3, 3), 0)  # Remove noise by blurring image slightly
         value = cv2.Laplacian(src, cv2.CV_64F).var()  # Apply Laplacian filter to get edges
 
-        if value > self.blur_threshold:  # Suggests the edges are defined
+        if value < self.blur_threshold:  # Suggests the edges are not defined
             return True
 
         return False
