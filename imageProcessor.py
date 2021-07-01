@@ -3,7 +3,7 @@ import imageRectifier
 
 
 class ImageProcessor:
-    def __init__(self, path, count, suitability_threshold=5, contrast_threshold=1):
+    def __init__(self, path, count, suitability_threshold=250, contrast_threshold=1):
         self.path = path
         self.image_count = count + 1  # Because of indexing errors
         self.suitability_threshold = suitability_threshold
