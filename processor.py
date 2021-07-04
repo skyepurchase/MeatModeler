@@ -10,6 +10,23 @@ def kp2pt(kp):
 kp2pt_v = np.vectorize(kp2pt)
 
 
+def increaseContrast(frame):
+    """
+    Increases the contrast of the grey scale images by applying CLAHE to the luminance
+
+    :param frame: The frame to be editted
+    :return: The increased contrast image
+    """
+    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+
+    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
+    l_out = clahe.apply(l)
+    lab_out = cv2.merge((l_out, a, b))
+
+    return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
+
+
 class Processor:
     def __init__(self):
         self.feature_params = dict(maxCorners=100,
@@ -35,8 +52,8 @@ class Processor:
         cap = cv2.VideoCapture(video)
 
         # Extract features from the start frame
-        success, start_frame = cap.read()
-        keyframe_grey = cv2.cvtColor(start_frame, cv2.COLOR_BGR2GRAY)
+        _, start_frame = cap.read()
+        keyframe_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
         keyframe_p = cv2.goodFeaturesToTrack(keyframe_grey, mask=None, **self.feature_params)
         count = 0
 
@@ -46,7 +63,7 @@ class Processor:
 
         while success:
             # Compare the last key frame to current key frame
-            frame_grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
             p1, st, err = cv2.calcOpticalFlowPyrLK(keyframe_grey, frame_grey, keyframe_p, None, **self.lk_params)
 
             # Keep only matching points
