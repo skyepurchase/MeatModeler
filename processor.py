@@ -28,7 +28,7 @@ def increaseContrast(frame):
 
 
 class Processor:
-    def __init__(self):
+    def __init__(self, display=False):
         self.feature_params = dict(maxCorners=100,
                                    qualityLevel=0.3,
                                    minDistance=7,
@@ -36,67 +36,88 @@ class Processor:
         self.lk_params = dict(winSize=(15, 15),
                               maxLevel=3,
                               criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        # self.color = np.random.randint(0, 255, (100, 3))
-        # self.fast = cv2.FastFeatureDetector_create()
 
-    def process(self, video):
+        self.current_keyframe_grey = None
+        self.current_keyframe_points = None
+
+        self.color = np.random.randint(0, 255, (100, 3))
+
+        self.fast = cv2.FastFeatureDetector_create()
+
+        self.display = display
+
+    def process(self, video, display=False):
         """
         Takes a video of a food item and returns the 3D mesh of the food item
-
         :param video: The video to be converted to a 3D mesh
+        :param display: Whether the process should be displayed
         :return: A 3D mesh
         """
-        # TODO: extract tracking code into separate function
         # TODO: utilise FAST rather than goodFeaturesToTrack
         # TODO: implement Point Vector storage and comparison
+        self.display = display
+
         cap = cv2.VideoCapture(video)
 
         # Extract features from the start frame
         _, start_frame = cap.read()
-        keyframe_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
-        keyframe_p = cv2.goodFeaturesToTrack(keyframe_grey, mask=None, **self.feature_params)
-        count = 0
+        self.current_keyframe_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+        self.current_keyframe_points = cv2.goodFeaturesToTrack(self.current_keyframe_grey,
+                                                               mask=None,
+                                                               **self.feature_params)
 
-        # mask = np.zeros_like(start_frame)
-
+        # Processing loop
         success, frame = cap.read()
-
         while success:
-            # Compare the last key frame to current key frame
-            frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
-            p1, st, err = cv2.calcOpticalFlowPyrLK(keyframe_grey, frame_grey, keyframe_p, None, **self.lk_params)
-
-            # Keep only matching points
-            if p1 is not None:
-                # good_new = p1[st == 1]
-                good_old = keyframe_p[st == 1]
-
-            # for i, (new, old) in enumerate(zip(good_new, good_old)):
-            #     a, b = new.ravel()
-            #     c, d = old.ravel()
-            #     frame = cv2.line(frame, (int(a), int(b)), (int(c), int(d)), self.color[i].tolist(), 2)
-            #     frame = cv2.circle(frame, (int(a), int(b)), 5, self.color[i].tolist(), -1)
-            #
-            # img = cv2.add(frame, mask)
-            #
-            # cv2.imshow("Tracking", img)
-            # key = cv2.waitKey() & 0xff
-            # if key == 27:
-            #     break
-
-            if err is not None and np.average(err) > 30:
-                # Current frame has deviated enough to be considered a key frame
-
-                # Not going to be in final product
-                filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image" + str(count) + ".jpg"
-                cv2.imwrite(filename, keyframe_grey)
-                count += 1
-
-                # ReCalculate features and change to new keyframe
-                keyframe_grey = frame_grey
-                keyframe_p = cv2.goodFeaturesToTrack(keyframe_grey, mask=None, **self.feature_params)
-            else:
-                # Only want visible points
-                keyframe_p = good_old.reshape(-1, 1, 2)
+            if self.isKeyframe(frame):
+                pass
 
             success, frame = cap.read()
+
+    def isKeyframe(self, frame):
+        """
+        Determines whether a given frame is a keyframe for further analysis
+        :param frame: The frame to be analysed
+        :return: A boolean value on whether the frame was a keyframe
+        """
+        # Compare the last key frame to current key frame
+        frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(self.current_keyframe_grey,
+                                               frame_grey,
+                                               self.current_keyframe_points,
+                                               None,
+                                               **self.lk_params)
+
+        # Keep only matching points
+        if p1 is not None:
+            if self.display:
+                good_new = p1[st == 1]
+
+            good_old = self.current_keyframe_points[st == 1]
+
+        if self.display:
+            for i, (new, old) in enumerate(zip(good_new, good_old)):
+                a, b = new.ravel()
+                c, d = old.ravel()
+                frame = cv2.line(frame, (int(a), int(b)), (int(c), int(d)), self.color[i].tolist(), 2)
+                frame = cv2.circle(frame, (int(a), int(b)), 5, self.color[i].tolist(), -1)
+
+            cv2.imshow("Tracking", frame)
+            key = cv2.waitKey() & 0xff
+            if key == 27:
+                self.display = False
+
+        # Current frame has deviated enough to be considered a key frame
+        if err is not None and np.average(err) > 30:
+            # ReCalculate features and change to new keyframe
+            self.current_keyframe_grey = frame_grey
+            self.current_keyframe_points = cv2.goodFeaturesToTrack(self.current_keyframe_grey,
+                                                                   mask=None,
+                                                                   **self.feature_params)
+
+            return True
+        else:
+            # Only want visible points
+            self.current_keyframe_points = good_old.reshape(-1, 1, 2)
+
+            return False
