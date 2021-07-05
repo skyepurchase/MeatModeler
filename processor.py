@@ -21,7 +21,7 @@ def increaseContrast(frame):
 
 
 class Processor:
-    def __init__(self):
+    def __init__(self, images):
         self.feature_params = dict(maxCorners=100,
                                    qualityLevel=0.3,
                                    minDistance=7,
@@ -33,6 +33,8 @@ class Processor:
                                  table_number=6,
                                  key_size=12,
                                  multi_probe_level=2)
+
+        self.intrinsic, self.distortion = self.calibrate(images)
 
         self.prev_frame_grey = None
         self.prev_frame_points = None
@@ -51,6 +53,83 @@ class Processor:
         self.display = False
         self.mask = None
         self.count = 1
+
+    def calibrate(self, images):
+        # Termination criteria
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+        # Prepare chessboard 3D points
+        objp = np.zeros((6 * 7, 3), np.float32)
+        objp[:, :2] = np.mgrid[0:7, 0:6].T.reshape(-1, 2)
+
+        # Arrays to store object and image points from all images
+        obj_points = []
+        img_points = []
+
+        for filename in images:
+            img = cv2.imread(filename)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+            # Find the chessboard corners
+            success, corners = cv2.findChessboardCorners(gray, (7, 6), None)
+
+            # If found, add object points, image points
+            if success:
+                obj_points.append(objp)
+
+                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                img_points.append(corners)
+
+                # Draw and display the corners
+                cv2.drawChessboardCorners(img, (7, 6), corners2, success)
+
+                # calculate the 50 percent of original dimensions
+                width = int(img.shape[1] * 0.2)
+                height = int(img.shape[0] * 0.2)
+
+                # dsize
+                dsize = (width, height)
+
+                # resize image
+                output = cv2.resize(img, dsize)
+
+                cv2.imshow(filename[-10:], output)
+                cv2.waitKey()
+
+        # Will be deleted later
+        img = cv2.imread(images[0])
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        success, matrix, distortion, rotation, translation = cv2.calibrateCamera(obj_points,
+                                                                                 img_points,
+                                                                                 gray.shape[::-1],
+                                                                                 None,
+                                                                                 None)
+
+        # Testing the removal of distortion
+        img = cv2.imread(images[0])
+        h, w = img.shape[:2]
+        new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(matrix, distortion, (w, h), 1, (w, h))
+
+        # undistort
+        undistorted = cv2.undistort(img, matrix, distortion, None, new_camera_matrix)
+        x, y, w, h = roi
+        undistorted = undistorted[y:y + h, x:x + w]
+
+        # calculate the 50 percent of original dimensions
+        width = int(undistorted.shape[1] * 0.2)
+        height = int(undistorted.shape[0] * 0.2)
+
+        # dsize
+        dsize = (width, height)
+
+        # resize image
+        output = cv2.resize(undistorted, dsize)
+
+        cv2.imshow("Undistorted", output)
+        cv2.waitKey()
+
+        return matrix, distortion
 
     def process(self, video, display=False):
         """
@@ -95,7 +174,6 @@ class Processor:
                 self.count += 1
 
             success, frame = cap.read()
-
 
     def isKeyframe(self, frame):
         """
@@ -165,7 +243,7 @@ class Processor:
         # Find which points can be considered new
         # TODO: vectorise following calculations
         good_matches = [match[0] for match in matches if
-                        len(match) == 2 and match[0].distance < 0.7 * match[1].distance]
+                        len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
         point_matches = [(new_points[m.trainIdx], self.current_orb_points[m.queryIdx]) for m in good_matches]
 
         # Update the keyframe points
