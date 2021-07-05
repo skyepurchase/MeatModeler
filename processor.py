@@ -61,7 +61,6 @@ class Processor:
         :return: A 3D mesh
         """
         # TODO: utilise FAST rather than goodFeaturesToTrack
-        # TODO: implement Point Vector storage and comparison
         self.display = display
 
         cap = cv2.VideoCapture(video)
@@ -134,9 +133,8 @@ class Processor:
         """
         Finds which features in two keyframes match
         :param keyframe: The keyframe to compare to the previous keyframe
-        :return: List of points
+        :return: List of keypoints
         """
-        # TODO: convert to find new points efficiently
         # Get new points and descriptors
         new_points, new_descriptors = self.orb.detectAndCompute(keyframe, None)
 
@@ -144,11 +142,13 @@ class Processor:
         flann = cv2.FlannBasedMatcher(self.flann_params, {})
         matches = flann.knnMatch(self.current_orb_descriptors, new_descriptors, k=2)
 
-        # Find which points can be considered matches
+        # Find which points can be considered new
         good_matches = [match[0] for match in matches if
                         len(match) == 2 and match[0].distance < 0.7 * match[1].distance]
+        matched_keyframe_keypoints = [new_points[m.trainIdx] for m in good_matches]
+        new_keypoints = [point for point in new_points if point not in matched_keyframe_keypoints]
 
         # Update the keyframe points
         self.current_orb_points, self.current_orb_descriptors = new_points, new_descriptors
 
-        return good_matches
+        return new_keypoints
