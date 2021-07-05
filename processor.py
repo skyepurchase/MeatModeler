@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from track import Track
 
 
 def increaseContrast(frame):
@@ -35,12 +36,15 @@ class Processor:
 
         self.prev_frame_grey = None
         self.prev_frame_points = None
+        self.prev_keyframe_grey = None
         self.acc_error = 0
 
         self.current_orb_points = None
         self.current_orb_descriptors = None
         self.point_vector = []
         self.orb = cv2.ORB_create(nfeatures=2000)
+
+        self.tracks = []
 
         # Debugging stuff
         self.color = np.random.randint(0, 255, (100, 3))
@@ -62,26 +66,26 @@ class Processor:
 
         # Extract features from the start frame
         _, start_frame = cap.read()
-        self.current_orb_points, self.current_orb_descriptors = self.orb.detectAndCompute(start_frame, None)
         self.prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+        self.prev_keyframe_grey = self.prev_frame_grey
         self.prev_frame_points = cv2.goodFeaturesToTrack(self.prev_frame_grey,
                                                          mask=None,
                                                          **self.feature_params)
+        self.current_orb_points, self.current_orb_descriptors = self.orb.detectAndCompute(self.prev_frame_grey, None)
 
+        # Will be removed
         cv2.imwrite("C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image0.jpg", start_frame)
         self.mask = np.zeros_like(start_frame)
 
         # Processing loop
         success, frame = cap.read()
-        while success:
-            if self.isKeyframe(frame):
-                # Add the new feature points to be considered
-                self.point_vector.append(self.calculateNewPoints(frame))
 
-                # Recalculate for new keyframe
-                self.prev_frame_points = cv2.goodFeaturesToTrack(self.prev_frame_grey,
-                                                                 mask=None,
-                                                                 **self.feature_params)
+        while success:
+            frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+
+            if self.isKeyframe(frame_grey):
+                # Update tracks
+                self.manageTracks(frame_grey, self.calculateMatchedPoints(frame_grey))
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
@@ -92,6 +96,7 @@ class Processor:
 
             success, frame = cap.read()
 
+
     def isKeyframe(self, frame):
         """
         Determines whether a given frame is a keyframe for further analysis
@@ -99,9 +104,8 @@ class Processor:
         :return: A boolean value on whether the frame was a keyframe
         """
         # Compare the last key frame to current key frame
-        frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
         p, st, err = cv2.calcOpticalFlowPyrLK(self.prev_frame_grey,
-                                              frame_grey,
+                                              frame,
                                               self.prev_frame_points,
                                               None,
                                               **self.lk_params)
@@ -126,7 +130,7 @@ class Processor:
                     self.display = False
 
             # Update previous data
-            self.prev_frame_grey = frame_grey
+            self.prev_frame_grey = frame
             self.prev_frame_points = good_new.reshape(-1, 1, 2)
 
             # If possible increase the accumulative error between frames
@@ -136,11 +140,16 @@ class Processor:
             # Current frame has deviated enough to be considered a key frame
             if self.acc_error > 0.3 * frame.shape[1]:
                 self.acc_error = 0
+
+                # Recalculate points for new keyframe
+                self.prev_frame_points = cv2.goodFeaturesToTrack(self.prev_frame_grey,
+                                                                 mask=None,
+                                                                 **self.feature_params)
                 return True
             else:
                 return False
 
-    def calculateNewPoints(self, keyframe):
+    def calculateMatchedPoints(self, keyframe):
         """
         Finds which features in two keyframes match
         :param keyframe: The keyframe to compare to the previous keyframe
@@ -154,13 +163,42 @@ class Processor:
         matches = flann.knnMatch(self.current_orb_descriptors, new_descriptors, k=2)
 
         # Find which points can be considered new
-        # TODO: rewrite to implicit for loops
+        # TODO: vectorise following calculations
         good_matches = [match[0] for match in matches if
                         len(match) == 2 and match[0].distance < 0.7 * match[1].distance]
-        matched_keyframe_keypoints = [new_points[m.trainIdx] for m in good_matches]
-        new_keypoints = [point for point in new_points if point not in matched_keyframe_keypoints]
+        point_matches = [(new_points[m.trainIdx], self.current_orb_points[m.queryIdx]) for m in good_matches]
 
         # Update the keyframe points
         self.current_orb_points, self.current_orb_descriptors = new_points, new_descriptors
 
-        return new_keypoints
+        return point_matches
+
+    def manageTracks(self, keyframe, matches):
+        """
+        Checks through the current tracks and updates them based on the matches.
+        If there are new features a new track is made.
+        If a track is not updated it is tagged.
+        :param keyframe: The keyframe to be analysed
+        :param matches: The matches to the previous keyframe
+        :return: Nothing
+        """
+        for track in self.tracks:
+            track.reset()
+
+        new_tracks = []
+
+        for correspondent, point in matches:
+            is_new_track = True
+
+            for track in self.tracks:
+                prior_points = track.getPoints()
+
+                if point in prior_points:
+                    track.update(keyframe, correspondent)
+                    is_new_track = False
+                    break
+
+            if is_new_track:
+                new_tracks.append(Track(self.prev_keyframe_grey, point, keyframe, correspondent))
+
+        self.tracks += new_tracks
