@@ -111,34 +111,34 @@ class Processor:
             good_new = p[st == 1]
             good_prev = self.prev_frame_points[st == 1]
 
-        # Will be removed later
-        if self.display:
-            for i, (new, old) in enumerate(zip(good_new, good_prev)):
-                a, b = new.ravel()
-                c, d = old.ravel()
-                self.mask = cv2.line(self.mask, (int(a), int(b)), (int(c), int(d)), self.color[i].tolist(), 2)
-                frame = cv2.circle(frame, (int(a), int(b)), 5, self.color[i].tolist(), -1)
+            # Will be removed later
+            if self.display:
+                for i, (new, old) in enumerate(zip(good_new, good_prev)):
+                    a, b = new.ravel()
+                    c, d = old.ravel()
+                    self.mask = cv2.line(self.mask, (int(a), int(b)), (int(c), int(d)), self.color[i].tolist(), 2)
+                    frame = cv2.circle(frame, (int(a), int(b)), 5, self.color[i].tolist(), -1)
 
-            img = cv2.add(frame, self.mask)
-            cv2.imshow("Tracking", img)
-            key = cv2.waitKey() & 0xff
-            if key == 27:
-                self.display = False
+                img = cv2.add(frame, self.mask)
+                cv2.imshow("Tracking", img)
+                key = cv2.waitKey() & 0xff
+                if key == 27:
+                    self.display = False
 
-        # Update previous data
-        self.prev_frame_grey = frame_grey
-        self.prev_frame_points = good_new.reshape(-1, 1, 2)
+            # Update previous data
+            self.prev_frame_grey = frame_grey
+            self.prev_frame_points = good_new.reshape(-1, 1, 2)
 
-        # If possible increase the accumulative error between frames
-        if err is not None:
-            self.acc_error += np.average(err)
+            # If possible increase the accumulative error between frames
+            if err is not None:
+                self.acc_error += np.average(err)
 
-        # Current frame has deviated enough to be considered a key frame
-        if self.acc_error > 0.3 * frame.shape[1]:
-            self.acc_error = 0
-            return True
-        else:
-            return False
+            # Current frame has deviated enough to be considered a key frame
+            if self.acc_error > 0.3 * frame.shape[1]:
+                self.acc_error = 0
+                return True
+            else:
+                return False
 
     def calculateNewPoints(self, keyframe):
         """
