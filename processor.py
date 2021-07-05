@@ -77,7 +77,7 @@ class Processor:
         success, frame = cap.read()
         while success:
             if self.isKeyframe(frame):
-                self.point_vector.append(self.calculateMatchedPoints(frame))
+                self.point_vector.append(self.calculateNewPoints(frame))
                 self.current_keyframe_grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 self.current_keyframe_points = cv2.goodFeaturesToTrack(self.current_keyframe_grey,
                                                                        mask=None,
@@ -129,7 +129,7 @@ class Processor:
 
             return False
 
-    def calculateMatchedPoints(self, keyframe):
+    def calculateNewPoints(self, keyframe):
         """
         Finds which features in two keyframes match
         :param keyframe: The keyframe to compare to the previous keyframe
