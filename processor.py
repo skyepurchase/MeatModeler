@@ -236,7 +236,7 @@ class Processor:
                                                                                  self.flann_params)
 
                 # Pose estimation
-                R, t = self.findRotationAndTranslation(matches)
+                R, t = self.poseEstimation(matches)
 
                 # Update tracks
                 self.manageTracks(frame_grey, matches)
@@ -296,7 +296,7 @@ class Processor:
         # Add new tracks
         self.tracks += new_tracks
 
-    def findRotationAndTranslation(self, matches):
+    def poseEstimation(self, matches):
         """
         Takes the matches between two frames and finds the rotation and translation of the second frame
         :param matches: The matched points between the frames
