@@ -122,7 +122,8 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
             return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
+def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params,
+                    camera_matrix, distortion_coefficients):
     """
     Finds which features in two keyframes match
     :param new_keyframe: The keyframe to compare to the previous keyframe
@@ -130,6 +131,8 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     :param prev_orb_descriptors: The previous keyframe feature descriptors
     :param orb: An ORB feature detection object
     :param flann_params: Parameters to tune FLANN matcher
+    :param camera_matrix: The intrinsic matrix for the given camera
+    :param distortion_coefficients: The distortion for the given camera
     :return: List of matched Keypoints,
             The new previous keyframe feature points
             The new previous keyframe feature descriptors
@@ -145,8 +148,13 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     # TODO: vectorise following calculations
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
-    point_matches = np.array(
-        [[prev_orb_points[m.queryIdx].pt, new_points[m.trainIdx].pt] for m in good_matches])
+
+    disorted_left = np.ascontiguousarray([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    distorted_right = np.ascontiguousarray([new_points[m.trainIdx].pt for m in good_matches])
+
+    undistorted_left = cv2.undistortPoints(disorted_left, camera_matrix, distortion_coefficients)
+    undistorted_right = cv2.undistortPoints(distorted_right, camera_matrix, distortion_coefficients)
+    point_matches = np.hstack([undistorted_left, undistorted_right])
 
     return point_matches, new_points, new_descriptors
 
@@ -264,7 +272,9 @@ class Processor:
                                                                                  prev_orb_points,
                                                                                  prev_orb_descriptors,
                                                                                  self.orb,
-                                                                                 self.flann_params)
+                                                                                 self.flann_params,
+                                                                                 self.intrinsic,
+                                                                                 self.distortion)
 
                 # Pose estimation
                 R, t = poseEstimation(matches, self.intrinsic, self.distortion)
