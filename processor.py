@@ -151,6 +151,37 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return point_matches, new_points, new_descriptors
 
 
+def poseEstimation(matches, camera_matrix, distortion_coefficients):
+    """
+    Takes the matches between two frames and finds the rotation and translation of the second frame
+    :param matches: The matched points between the frames
+    :param camera_matrix: The intrinsic matrix for the given camera
+    :param distortion_coefficients: The distortion for the given camera
+    :return: The rotation and translation matrix
+    """
+    # Convert matches into corresponding point vectors
+    frame_left_points = np.ascontiguousarray(matches[:, 0])
+    frame_right_points = np.ascontiguousarray(matches[:, 1])
+
+    # Find essential matrix and inliers
+    essential, mask = cv2.findEssentialMat(frame_left_points,
+                                           frame_right_points,
+                                           camera_matrix,
+                                           distortion_coefficients,
+                                           camera_matrix,
+                                           distortion_coefficients)
+
+    # TODO: Add distanceThresh for potential triangulated points
+    # Use the essential matrix and inliers to find the pose
+    _, R, t, _ = cv2.recoverPose(essential,
+                                 frame_left_points,
+                                 frame_right_points,
+                                 camera_matrix,
+                                 mask=mask)
+
+    return R, t
+
+
 class Processor:
     def __init__(self, images):
         self.feature_params = dict(maxCorners=100,
@@ -236,7 +267,7 @@ class Processor:
                                                                                  self.flann_params)
 
                 # Pose estimation
-                R, t = self.poseEstimation(matches)
+                R, t = poseEstimation(matches, self.intrinsic, self.distortion)
 
                 # Update tracks
                 self.manageTracks(frame_grey, matches)
@@ -295,31 +326,3 @@ class Processor:
 
         # Add new tracks
         self.tracks += new_tracks
-
-    def poseEstimation(self, matches):
-        """
-        Takes the matches between two frames and finds the rotation and translation of the second frame
-        :param matches: The matched points between the frames
-        :return: The rotation and translation matrix
-        """
-        # Convert matches into corresponding point vectors
-        frame_left_points = np.ascontiguousarray(matches[:, 0])
-        frame_right_points = np.ascontiguousarray(matches[:, 1])
-
-        # Find essential matrix and inliers
-        essential, mask = cv2.findEssentialMat(frame_left_points,
-                                               frame_right_points,
-                                               self.intrinsic,
-                                               self.distortion,
-                                               self.intrinsic,
-                                               self.distortion)
-
-        # TODO: Add distanceThresh for potential triangulated points
-        # Use the essential matrix and inliers to find the pose
-        _, R, t, _ = cv2.recoverPose(essential,
-                                     frame_left_points,
-                                     frame_right_points,
-                                     self.intrinsic,
-                                     mask=mask)
-
-        return R, t
