@@ -48,6 +48,8 @@ class Processor:
 
         self.tracks = []
 
+        self.extrinsic_properties = {}
+
         # Debugging stuff
         self.color = np.random.randint(0, 255, (100, 3))
         self.display = False
@@ -78,11 +80,11 @@ class Processor:
         img = cv2.imread(images[0])
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        success, matrix, distortion, rotation, translation = cv2.calibrateCamera(obj_points,
-                                                                                 img_points,
-                                                                                 gray.shape[::-1],
-                                                                                 None,
-                                                                                 None)
+        success, matrix, distortion, _, _ = cv2.calibrateCamera(obj_points,
+                                                                img_points,
+                                                                gray.shape[::-1],
+                                                                None,
+                                                                None)
         if success:
             return matrix, distortion
 
@@ -120,8 +122,14 @@ class Processor:
             frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
             if self.isKeyframe(frame_grey):
+                # Calculate matches
+                matches = self.calculateMatchedPoints(frame_grey)
+
+                # Pose estimation
+                R, t = self.findRotationAndTranslation(matches)
+
                 # Update tracks
-                self.manageTracks(frame_grey, self.calculateMatchedPoints(frame_grey))
+                self.manageTracks(frame_grey, matches)
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
@@ -201,7 +209,8 @@ class Processor:
         # TODO: vectorise following calculations
         good_matches = [match[0] for match in matches if
                         len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
-        point_matches = [(new_points[m.trainIdx], self.current_orb_points[m.queryIdx]) for m in good_matches]
+        point_matches = np.array(
+            [[self.current_orb_points[m.queryIdx].pt, new_points[m.trainIdx].pt] for m in good_matches])
 
         # Update the keyframe points
         self.current_orb_points, self.current_orb_descriptors = new_points, new_descriptors
@@ -222,7 +231,7 @@ class Processor:
 
         new_tracks = []
 
-        for correspondent, point in matches:
+        for point, correspondent in matches:
             is_new_track = True
 
             for track in self.tracks:
@@ -237,3 +246,31 @@ class Processor:
                 new_tracks.append(Track(self.prev_keyframe_grey, point, keyframe, correspondent))
 
         self.tracks += new_tracks
+
+    def findRotationAndTranslation(self, matches):
+        """
+        Takes the matches between two frames and finds the rotation and translation of the second frame
+        :param matches: The matched points between the frames
+        :return: The rotation and translation matrix
+        """
+        # Convert matches into corresponding point vectors
+        frame_left_points = np.ascontiguousarray(matches[:, 0])
+        frame_right_points = np.ascontiguousarray(matches[:, 1])
+
+        # Find essential matrix and inliers
+        essential, mask = cv2.findEssentialMat(frame_left_points,
+                                               frame_right_points,
+                                               self.intrinsic,
+                                               self.distortion,
+                                               self.intrinsic,
+                                               self.distortion)
+
+        # TODO: Add distanceThresh for potential triangulated points
+        # Use the essential matrix and inliers to find the pose
+        _, R, t, _ = cv2.recoverPose(essential,
+                                     frame_left_points,
+                                     frame_right_points,
+                                     self.intrinsic,
+                                     mask=mask)
+
+        return R, t
