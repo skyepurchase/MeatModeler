@@ -55,12 +55,9 @@ class Processor:
         self.count = 1
 
     def calibrate(self, images):
-        # Termination criteria
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-
         # Prepare chessboard 3D points
-        objp = np.zeros((6 * 7, 3), np.float32)
-        objp[:, :2] = np.mgrid[0:7, 0:6].T.reshape(-1, 2)
+        objp = np.zeros((7 * 7, 3), np.float32)
+        objp[:, :2] = np.mgrid[0:7, 0:7].T.reshape(-1, 2)
 
         # Arrays to store object and image points from all images
         obj_points = []
@@ -71,32 +68,13 @@ class Processor:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
             # Find the chessboard corners
-            success, corners = cv2.findChessboardCorners(gray, (7, 6), None)
+            success, corners = cv2.findChessboardCorners(gray, (7, 7), None)
 
             # If found, add object points, image points
             if success:
                 obj_points.append(objp)
-
-                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                 img_points.append(corners)
 
-                # Draw and display the corners
-                cv2.drawChessboardCorners(img, (7, 6), corners2, success)
-
-                # calculate the 50 percent of original dimensions
-                width = int(img.shape[1] * 0.2)
-                height = int(img.shape[0] * 0.2)
-
-                # dsize
-                dsize = (width, height)
-
-                # resize image
-                output = cv2.resize(img, dsize)
-
-                cv2.imshow(filename[-10:], output)
-                cv2.waitKey()
-
-        # Will be deleted later
         img = cv2.imread(images[0])
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -105,31 +83,10 @@ class Processor:
                                                                                  gray.shape[::-1],
                                                                                  None,
                                                                                  None)
+        if success:
+            return matrix, distortion
 
-        # Testing the removal of distortion
-        img = cv2.imread(images[0])
-        h, w = img.shape[:2]
-        new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(matrix, distortion, (w, h), 1, (w, h))
-
-        # undistort
-        undistorted = cv2.undistort(img, matrix, distortion, None, new_camera_matrix)
-        x, y, w, h = roi
-        undistorted = undistorted[y:y + h, x:x + w]
-
-        # calculate the 50 percent of original dimensions
-        width = int(undistorted.shape[1] * 0.2)
-        height = int(undistorted.shape[0] * 0.2)
-
-        # dsize
-        dsize = (width, height)
-
-        # resize image
-        output = cv2.resize(undistorted, dsize)
-
-        cv2.imshow("Undistorted", output)
-        cv2.waitKey()
-
-        return matrix, distortion
+        return None
 
     def process(self, video, display=False):
         """
