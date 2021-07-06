@@ -131,6 +131,10 @@ class Processor:
                 # Update tracks
                 self.manageTracks(frame_grey, matches)
 
+                for track in self.tracks:
+                    if track.wasUpdated():
+                        self.tracks.remove(track)
+
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
                 filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image" + str(
@@ -226,25 +230,35 @@ class Processor:
         :param matches: The matches to the previous keyframe
         :return: Nothing
         """
+        # All tracks have not been updated
         for track in self.tracks:
             track.reset()
 
         new_tracks = []
 
+        # For each match check if this feature already exists
         for point, correspondent in matches:
+            # Convert to tuples
+            point = (point[0], point[1])
+            correspondent = (correspondent[0], correspondent[1])
+
             is_new_track = True
 
             for track in self.tracks:
-                prior_points = track.getPoints()
+                # If the current point matches the track's last point then they reference the same feature
+                prior_point = track.getLastPoint()
 
-                if point in prior_points:
+                # So update the track
+                if point == prior_point:
                     track.update(keyframe, correspondent)
                     is_new_track = False
                     break
 
+            # Feature was not found elsewhere
             if is_new_track:
                 new_tracks.append(Track(self.prev_keyframe_grey, point, keyframe, correspondent))
 
+        # Add new tracks
         self.tracks += new_tracks
 
     def findRotationAndTranslation(self, matches):

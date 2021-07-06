@@ -14,11 +14,14 @@ class Track:
     def reset(self):
         self.updated = False
 
-    def getPoints(self):
-        return self.virtual_point_vector
+    def getLastPoint(self):
+        return self.virtual_point_vector[-1]
 
     def getTriangulationData(self):
         return self.first_frame, self.last_frame, self.virtual_point_vector[0], self.virtual_point_vector[-1]
 
     def setPhysicalPoint(self, point):
         self.physical_point = point
+
+    def wasUpdated(self):
+        return self.updated
