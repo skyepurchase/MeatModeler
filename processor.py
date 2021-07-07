@@ -82,7 +82,6 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
             The new previous frame points,
             The new accumulated error
     """
-    # TODO: utilise ORB rather than goodFeaturesToTrack
     # Compare the last key frame to current key frame
     p, st, err = cv2.calcOpticalFlowPyrLK(prev_frame_grey,
                                           frame_grey,
@@ -95,7 +94,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
         good_new = p[st == 1]
         good_prev = prev_frame_points[st == 1]
 
-        # Will be removed later
+        # TODO: remove
         if display:
             for i, (new, old) in enumerate(zip(good_new, good_prev)):
                 a, b = new.ravel()
@@ -320,7 +319,7 @@ class Processor:
         self.count = 1
         self.num_features = 0
 
-    def process(self, video, display=False):
+    def process(self, video):
         """
         Takes a video of a food item and returns the 3D mesh of the food item
 
@@ -328,7 +327,6 @@ class Processor:
         :param display: Whether the process should be displayed
         :return: A 3D mesh
         """
-        self.display = display
         orb = cv2.ORB_create(nfeatures=2000)
 
         cap = cv2.VideoCapture(video)
@@ -424,8 +422,7 @@ class Processor:
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
-                filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image" + str(
-                    self.count) + ".jpg"
+                filename = self.path + "Raw\\Image" + str(self.count) + ".jpg"
                 cv2.imwrite(filename, frame)
                 self.count += 1
 
