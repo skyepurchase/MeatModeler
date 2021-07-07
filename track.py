@@ -20,11 +20,7 @@ class Track:
         return self.virtual_point_vector[-1]
 
     def getTriangulationData(self):
-        return self.first_frame_ID, \
-               self.first_frame_pose, \
-               self.last_frame_ID, \
-               self.last_frame_pose, \
-               self.virtual_point_vector
+        return self.first_frame_pose, self.last_frame_pose, self.virtual_point_vector
 
     def wasUpdated(self):
         return self.updated
