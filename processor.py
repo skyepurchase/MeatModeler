@@ -151,10 +151,10 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
 
-    disorted_left = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    distorted_left = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
     distorted_right = np.array([new_points[m.trainIdx].pt for m in good_matches])
 
-    undistorted_left = cv2.undistortPoints(np.expand_dims(disorted_left, axis=1),
+    undistorted_left = cv2.undistortPoints(np.expand_dims(distorted_left, axis=1),
                                            camera_matrix,
                                            distortion_coefficients)
     undistorted_right = cv2.undistortPoints(np.expand_dims(distorted_right, axis=1),
@@ -164,16 +164,16 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return undistorted_left, undistorted_right, new_points, new_descriptors
 
 
-def poseEstimation(left_frame_points, right_frame_points, camera_matrix, distortion_coefficients):
+def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     """
     Takes the matches between two frames and finds the rotation and translation of the second frame
-    :param left_frame_points: Matched points from the left frame
-    :param right_frame_points: Matched points from the right frame
-    :param camera_matrix: The intrinsic matrix for the given camera
-    :param distortion_coefficients: The distortion for the given camera
+    :param left_frame_points: Undistorted matched points from the left frame
+    :param right_frame_points: Undistorted matched points from the right frame
+    :param prev_pose: The pose of the left frame in relation to the original frame
     :return: The used left points,
             The used right points,
-            The corresponding 3D points
+            The corresponding 3D points,
+            The new previous pose matrix
     """
     # Find essential matrix and inliers
     essential, mask_E = cv2.findEssentialMat(left_frame_points,
@@ -191,8 +191,9 @@ def poseEstimation(left_frame_points, right_frame_points, camera_matrix, distort
                                             mask=mask_E)
 
     # Create the 3x4 pose matrices
-    Pose1 = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
-    Pose2 = np.hstack([R, t])
+    Pose1 = prev_pose
+    pose_transform = np.vstack([prev_pose, np.array([0, 0, 0, 1])])
+    Pose2 = np.matmul(np.hstack([R, t]), pose_transform)
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
@@ -206,9 +207,8 @@ def poseEstimation(left_frame_points, right_frame_points, camera_matrix, distort
 
     # Normalise homogeneous (w=1)
     norm_points = homogeneous_points / homogeneous_points[:, -1][:, None]
-    points = norm_points[:, :3]
 
-    return usable_left_points, usable_right_points, norm_points
+    return usable_left_points, usable_right_points, norm_points, Pose2
 
 
 class Processor:
@@ -267,8 +267,11 @@ class Processor:
                                                     **self.feature_params)
         accumulative_error = 0
 
-        # Initiliase feature tracking
+        # Initialise feature tracking
         prev_orb_points, prev_orb_descriptors = self.orb.detectAndCompute(prev_frame_grey, None)
+
+        # Initialise pose estimation
+        prev_pose = np.hstack(np.eye(3, 3), np.zeros((3, 1)))
 
         # Will be removed
         self.mask = np.zeros_like(start_frame)
@@ -298,10 +301,9 @@ class Processor:
                                                                                               self.distortion)
 
                 # Pose estimation
-                L_points, R_points, physical_points = poseEstimation(L_matches,
-                                                                     R_matches,
-                                                                     self.intrinsic,
-                                                                     self.distortion)
+                L_points, R_points, physical_points, prev_pose = poseEstimation(L_matches,
+                                                                                R_matches,
+                                                                                prev_pose)
 
                 matches = np.hstack([L_points, R_points])
 
