@@ -199,22 +199,12 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
                                             mask=mask_E)
 
     # Create the 3x4 pose matrices
-    Pose1 = prev_pose
     pose_transform = np.vstack([prev_pose, np.array([0, 0, 0, 1])])
     Pose2 = np.matmul(np.hstack([R, t]), pose_transform)
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
-
-    # # Use the poses to find the homogeneous 3D points
-    # homogeneous_points = cv2.triangulatePoints(Pose1,
-    #                                            Pose2,
-    #                                            usable_left_points,
-    #                                            usable_right_points).T
-    #
-    # # Normalise homogeneous (w=1)
-    # norm_points = homogeneous_points / homogeneous_points[:, -1][:, None]
 
     return usable_left_points, usable_right_points, Pose2
 
