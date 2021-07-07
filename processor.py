@@ -207,28 +207,30 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    # Use the poses to find the homogeneous 3D points
-    homogeneous_points = cv2.triangulatePoints(Pose1,
-                                               Pose2,
-                                               usable_left_points,
-                                               usable_right_points).T
+    # # Use the poses to find the homogeneous 3D points
+    # homogeneous_points = cv2.triangulatePoints(Pose1,
+    #                                            Pose2,
+    #                                            usable_left_points,
+    #                                            usable_right_points).T
+    #
+    # # Normalise homogeneous (w=1)
+    # norm_points = homogeneous_points / homogeneous_points[:, -1][:, None]
 
-    # Normalise homogeneous (w=1)
-    norm_points = homogeneous_points / homogeneous_points[:, -1][:, None]
-
-    return usable_left_points, usable_right_points, norm_points, Pose2
+    return usable_left_points, usable_right_points, Pose2
 
 
-def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents, points):
+def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, keyframe_ID, keyframe_pose,
+                  correspondents):
     """
     Checks through the current tracks and updates them based on the provided matches
 
     :param tracks: Current tracks
     :param prev_keyframe_ID: The identity number of the previous keyframe
+    :param prev_keyframe_pose: The absolute pose of the previous keyframe
     :param feature_points: The feature point matches from the previous keyframe
     :param keyframe_ID: The identity number of the current keyframe
+    :param keyframe_pose: The absolute pose of the current keyframe
     :param correspondents: The corresponding feature match
-    :param points: The corresponding 3D points
     :return: The tracks to be processed,
             Continuing tracks
     """
@@ -238,7 +240,7 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     popped_tracks = []
 
     # For each match check if this feature already exists
-    for feature_point, correspondent, point in zip(feature_points, correspondents, points):
+    for feature_point, correspondent in zip(feature_points, correspondents):
         # Convert to tuples
         feature_point = (feature_point[0], feature_point[1])
         correspondent = (correspondent[0], correspondent[1])
@@ -251,13 +253,19 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
 
             # So update the track
             if feature_point == prior_point:
-                track.update(keyframe_ID, correspondent, point)
+                track.update(keyframe_ID, keyframe_pose, correspondent)
                 is_new_track = False
                 break
 
         # Feature was not found elsewhere
         if is_new_track:
-            new_tracks.append(Track(prev_keyframe_ID, feature_point, keyframe_ID, correspondent, point))
+            new_track = Track(prev_keyframe_ID,
+                              prev_keyframe_pose,
+                              feature_point,
+                              keyframe_ID,
+                              keyframe_pose,
+                              correspondent)
+            new_tracks.append(new_track)
 
     for track in tracks:
         if track.wasUpdated():
@@ -362,21 +370,25 @@ class Processor:
                                                                                               self.distortion)
 
                 # Pose estimation
-                L_points, R_points, physical_points, prev_pose = poseEstimation(L_matches,
-                                                                                R_matches,
-                                                                                prev_pose)
+                L_points, R_points, pose = poseEstimation(L_matches,
+                                                          R_matches,
+                                                          prev_pose)
 
                 # Update tracks
                 popped_tracks, tracks = pointTracking(tracks,
                                                       prev_keyframe_ID,
+                                                      prev_pose,
                                                       L_points,
                                                       keyframe_ID,
-                                                      R_points,
-                                                      physical_points)
-                prev_keyframe_ID = keyframe_ID
-                keyframe_ID += 1
+                                                      pose,
+                                                      R_points)
 
                 # Triangulation
+
+                # Update variables
+                prev_pose = pose
+                prev_keyframe_ID = keyframe_ID
+                keyframe_ID += 1
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
