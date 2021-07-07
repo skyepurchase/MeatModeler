@@ -133,8 +133,9 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     :param flann_params: Parameters to tune FLANN matcher
     :param camera_matrix: The intrinsic matrix for the given camera
     :param distortion_coefficients: The distortion for the given camera
-    :return: List of matched Keypoints,
-            The new previous keyframe feature points
+    :return: List of left frame matched Keypoints,
+            List of right frame matched Keypoints,
+            The new previous keyframe feature points,
             The new previous keyframe feature descriptors
     """
     # Get new points and descriptors
@@ -149,14 +150,17 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
 
-    disorted_left = np.ascontiguousarray([prev_orb_points[m.queryIdx].pt for m in good_matches])
-    distorted_right = np.ascontiguousarray([new_points[m.trainIdx].pt for m in good_matches])
+    disorted_left = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    distorted_right = np.array([new_points[m.trainIdx].pt for m in good_matches])
 
-    undistorted_left = cv2.undistortPoints(disorted_left, camera_matrix, distortion_coefficients)
-    undistorted_right = cv2.undistortPoints(distorted_right, camera_matrix, distortion_coefficients)
-    point_matches = np.hstack([undistorted_left, undistorted_right])
+    undistorted_left = cv2.undistortPoints(np.expand_dims(disorted_left, axis=1),
+                                           camera_matrix,
+                                           distortion_coefficients)
+    undistorted_right = cv2.undistortPoints(np.expand_dims(distorted_right, axis=1),
+                                            camera_matrix,
+                                            distortion_coefficients)
 
-    return point_matches, new_points, new_descriptors
+    return undistorted_left, undistorted_right, new_points, new_descriptors
 
 
 def poseEstimation(matches, camera_matrix, distortion_coefficients):
@@ -268,13 +272,15 @@ class Processor:
                 self.prev_keyframe_grey = frame_grey
 
                 # Calculate matches
-                matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                 prev_orb_points,
-                                                                                 prev_orb_descriptors,
-                                                                                 self.orb,
-                                                                                 self.flann_params,
-                                                                                 self.intrinsic,
-                                                                                 self.distortion)
+                L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
+                                                                                              prev_orb_points,
+                                                                                              prev_orb_descriptors,
+                                                                                              self.orb,
+                                                                                              self.flann_params,
+                                                                                              self.intrinsic,
+                                                                                              self.distortion)
+
+                matches = np.hstack([L_matches, R_matches])
 
                 # Pose estimation
                 R, t = poseEstimation(matches, self.intrinsic, self.distortion)
