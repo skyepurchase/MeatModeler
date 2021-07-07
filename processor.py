@@ -242,8 +242,8 @@ def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, 
     # For each match check if this feature already exists
     for feature_point, correspondent in zip(feature_points, correspondents):
         # Convert to tuples
-        feature_point = (feature_point[0], feature_point[1])
-        correspondent = (correspondent[0], correspondent[1])
+        feature_point = (feature_point[0][0], feature_point[0][1])
+        correspondent = (correspondent[0][0], correspondent[0][1])
 
         is_new_track = True
 
@@ -335,7 +335,7 @@ class Processor:
         prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
         # Initialise pose estimation
-        prev_pose = np.hstack(np.eye(3, 3), np.zeros((3, 1)))
+        prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
 
         # Initialise point tracking
         tracks = []
