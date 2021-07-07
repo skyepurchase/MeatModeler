@@ -354,6 +354,12 @@ class Processor:
         prev_keyframe_ID = 0
         keyframe_ID = 1
 
+        # Initialise bundling
+        frame_projections = {keyframe_ID: prev_pose}
+        points = {}
+        feature_lookup = {}
+        point_ID = 0
+
         # Will be removed
         self.mask = np.zeros_like(start_frame)
         filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image0.jpg"
@@ -385,6 +391,7 @@ class Processor:
                 L_points, R_points, pose = poseEstimation(L_matches,
                                                           R_matches,
                                                           prev_pose)
+                frame_projections[keyframe_ID] = pose
 
                 # Update tracks
                 popped_tracks, tracks = pointTracking(tracks,
@@ -397,13 +404,22 @@ class Processor:
 
                 # Triangulation
                 for track in popped_tracks:
-                    first_pose, last_pose, features = track.getTriangulationData()
+                    first_frame_ID, first_pose, last_frame_ID, last_pose, features = track.getTriangulationData()
+
+                    # Get the 3D point and store
                     point = triangulation(first_pose, last_pose, features)
+                    points[point_ID] = point
+
+                    # Relate the features to a frame and point
+                    for i in range(first_frame_ID, last_frame_ID + 1):
+                        point_table = feature_lookup[i]
+                        point_table[point_ID] = features[i - first_frame_ID]
 
                 # Update variables
                 prev_pose = pose
                 prev_keyframe_ID = keyframe_ID
                 keyframe_ID += 1
+                point_ID += 1
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
