@@ -211,6 +211,60 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     return usable_left_points, usable_right_points, norm_points, Pose2
 
 
+def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents, points):
+    """
+    Checks through the current tracks and updates them based on the matches.
+    If there are new features a new track is made.
+    If a track is not updated it is tagged.
+    :param tracks: Current tracks
+    :param prev_keyframe_ID: The identity number of the previous keyframe
+    :param feature_points: The feature point matches from the previous keyframe
+    :param keyframe_ID: The identity number of the current keyframe
+    :param correspondents: The corresponding feature match
+    :param points: The corresponding 3D points
+    :return: The tracks to be processed,
+            Continuing tracks
+    """
+
+    new_tracks = []
+    updated_tracks = []
+    popped_tracks = []
+
+    # For each match check if this feature already exists
+    for feature_point, correspondent, point in zip(feature_points, correspondents, points):
+        # Convert to tuples
+        feature_point = (feature_point[0], feature_point[1])
+        correspondent = (correspondent[0], correspondent[1])
+
+        is_new_track = True
+
+        for track in tracks:
+            # If the current point matches the track's last point then they reference the same feature
+            prior_point = track.getLastPoint()
+
+            # So update the track
+            if feature_point == prior_point:
+                track.update(keyframe_ID, correspondent, point)
+                is_new_track = False
+                break
+
+        # Feature was not found elsewhere
+        if is_new_track:
+            new_tracks.append(Track(prev_keyframe_ID, feature_point, keyframe_ID, correspondent, point))
+
+    for track in tracks:
+        if track.wasUpdated():
+            track.reset()
+            updated_tracks.append(track)
+        else:
+            popped_tracks.append(track)
+
+    # Add new tracks
+    updated_tracks += new_tracks
+
+    return popped_tracks, updated_tracks
+
+
 class Processor:
     def __init__(self, images):
         self.feature_params = dict(maxCorners=100,
@@ -308,7 +362,7 @@ class Processor:
                 matches = np.hstack([L_points, R_points])
 
                 # Update tracks
-                self.pointTracking(frame_grey, matches)
+                pointTracking(frame_grey, matches)
 
                 # Will go onto Triangulation/Bundling
                 for track in self.tracks:
@@ -324,43 +378,3 @@ class Processor:
                 self.count += 1
 
             success, frame = cap.read()
-
-    def pointTracking(self, keyframe, matches):
-        """
-        Checks through the current tracks and updates them based on the matches.
-        If there are new features a new track is made.
-        If a track is not updated it is tagged.
-        :param keyframe: The keyframe to be analysed
-        :param matches: The matches to the previous keyframe
-        :return: Nothing
-        """
-        # All tracks have not been updated
-        for track in self.tracks:
-            track.reset()
-
-        new_tracks = []
-
-        # For each match check if this feature already exists
-        for point, correspondent in matches:
-            # Convert to tuples
-            point = (point[0], point[1])
-            correspondent = (correspondent[0], correspondent[1])
-
-            is_new_track = True
-
-            for track in self.tracks:
-                # If the current point matches the track's last point then they reference the same feature
-                prior_point = track.getLastPoint()
-
-                # So update the track
-                if point == prior_point:
-                    track.update(keyframe, correspondent)
-                    is_new_track = False
-                    break
-
-            # Feature was not found elsewhere
-            if is_new_track:
-                new_tracks.append(Track(self.prev_keyframe_grey, point, keyframe, correspondent))
-
-        # Add new tracks
-        self.tracks += new_tracks
