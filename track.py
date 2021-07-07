@@ -4,7 +4,7 @@ class Track:
         self.last_frame_ID = frame_ID
         self.virtual_point_vector = [point, correspondent]
         self.physical_point_vector = [physical_point]
-        self.updated = True
+        self.updated = False
 
     def update(self, frame_ID, correspondent, point):
         self.last_frame_ID = frame_ID
