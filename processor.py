@@ -411,9 +411,10 @@ class Processor:
                     points[point_ID] = point
 
                     # Relate the features to a frame and point
+                    frame_table = {}
                     for i in range(first_frame_ID, last_frame_ID + 1):
-                        point_table = feature_lookup[i]
-                        point_table[point_ID] = features[i - first_frame_ID]
+                        frame_table[i] = features[i - first_frame_ID]
+                    feature_lookup[point_ID] = frame_table
 
                 # Update variables
                 prev_pose = pose
