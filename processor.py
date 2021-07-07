@@ -281,14 +281,6 @@ class Processor:
 
         self.intrinsic, self.distortion = calibrate(images)
 
-        self.prev_keyframe_grey = None
-
-        self.orb = cv2.ORB_create(nfeatures=2000)
-
-        self.tracks = []
-
-        self.extrinsic_properties = {}
-
         # Debugging stuff
         self.color = np.random.randint(0, 255, (100, 3))
         self.display = False
@@ -305,30 +297,35 @@ class Processor:
         """
         # TODO: utilise ORB rather than goodFeaturesToTrack
         self.display = display
+        orb = cv2.ORB_create(nfeatures=2000)
 
         cap = cv2.VideoCapture(video)
 
         # Retrieve first frame
         _, start_frame = cap.read()
-        filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image0.jpg"
-        cv2.imwrite(filename, start_frame)
 
         # Initialise keyframe tracking
         prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
-        self.prev_keyframe_grey = prev_frame_grey
         prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
                                                     mask=None,
                                                     **self.feature_params)
         accumulative_error = 0
 
         # Initialise feature tracking
-        prev_orb_points, prev_orb_descriptors = self.orb.detectAndCompute(prev_frame_grey, None)
+        prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
         # Initialise pose estimation
         prev_pose = np.hstack(np.eye(3, 3), np.zeros((3, 1)))
 
+        # Initialise point tracking
+        tracks = []
+        prev_keyframe_ID = 0
+        keyframe_ID = 1
+
         # Will be removed
         self.mask = np.zeros_like(start_frame)
+        filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image0.jpg"
+        cv2.imwrite(filename, start_frame)
 
         # Processing loop
         success, frame = cap.read()
@@ -343,13 +340,11 @@ class Processor:
                                                                                                self.feature_params)
 
             if success:
-                self.prev_keyframe_grey = frame_grey
-
                 # Calculate matches
                 L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
                                                                                               prev_orb_points,
                                                                                               prev_orb_descriptors,
-                                                                                              self.orb,
+                                                                                              orb,
                                                                                               self.flann_params,
                                                                                               self.intrinsic,
                                                                                               self.distortion)
@@ -359,16 +354,17 @@ class Processor:
                                                                                 R_matches,
                                                                                 prev_pose)
 
-                matches = np.hstack([L_points, R_points])
-
                 # Update tracks
-                pointTracking(frame_grey, matches)
+                popped_tracks, tracks = pointTracking(tracks,
+                                                      prev_keyframe_ID,
+                                                      L_points,
+                                                      keyframe_ID,
+                                                      R_points,
+                                                      physical_points)
+                prev_keyframe_ID = keyframe_ID
+                keyframe_ID += 1
 
-                # Will go onto Triangulation/Bundling
-                for track in self.tracks:
-                    if not track.wasUpdated():
-                        self.tracks.remove(track)
-                        self.num_features += 1
+                # Triangulation
 
                 # Will be removed later
                 self.mask = np.zeros_like(frame)
