@@ -308,7 +308,7 @@ class Processor:
                 matches = np.hstack([L_points, R_points])
 
                 # Update tracks
-                self.manageTracks(frame_grey, matches)
+                self.pointTracking(frame_grey, matches)
 
                 # Will go onto Triangulation/Bundling
                 for track in self.tracks:
@@ -325,7 +325,7 @@ class Processor:
 
             success, frame = cap.read()
 
-    def manageTracks(self, keyframe, matches):
+    def pointTracking(self, keyframe, matches):
         """
         Checks through the current tracks and updates them based on the matches.
         If there are new features a new track is made.
