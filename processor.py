@@ -270,6 +270,28 @@ def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, 
     return popped_tracks, updated_tracks
 
 
+def triangulation(first_pose, last_pose, features):
+    """
+    Using the furthest apart frames calculates the 3D position of a given point
+
+    :param first_pose: The absolute position of the first frame
+    :param last_pose: The absolute position of the last frame
+    :param features: The list of feature image coordinates
+    :return: The resulting 3D point
+    """
+    # Use the poses to find the homogeneous 3D points
+    homogeneous_point = cv2.triangulatePoints(first_pose,
+                                              last_pose,
+                                              np.array(features[0]),
+                                              np.array(features[-1])).T
+
+    # Normalise homogeneous (w=1)
+    norm_point = homogeneous_point / homogeneous_point[:, -1][:, None]
+    norm_point = norm_point[0]
+
+    return norm_point
+
+
 class Processor:
     def __init__(self, images):
         """
@@ -374,6 +396,9 @@ class Processor:
                                                       R_points)
 
                 # Triangulation
+                for track in popped_tracks:
+                    first_pose, last_pose, features = track.getTriangulationData()
+                    point = triangulation(first_pose, last_pose, features)
 
                 # Update variables
                 prev_pose = pose
