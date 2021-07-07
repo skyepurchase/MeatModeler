@@ -1,10 +1,7 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 from track import Track
 
-
-# TODO: make all methods stateless
 
 def increaseContrast(frame):
     """
@@ -24,6 +21,13 @@ def increaseContrast(frame):
 
 
 def calibrate(images):
+    """
+    Takes specific chess board images and calibrates the camera appropriately
+
+    :param images: A list of different images of a known chessboard
+    :return: The intrinsic property matrix,
+            The distortion coefficients
+    """
     # Prepare chessboard 3D points
     objp = np.zeros((7 * 7, 3), np.float32)
     objp[:, :2] = np.mgrid[0:7, 0:7].T.reshape(-1, 2)
@@ -62,6 +66,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
                      threshold=0.3, display=False, color=None, mask=None):
     """
     Determines whether a given frame is a keyframe for further analysis
+
     :param frame_grey: The frame to be analysed in greyscale
     :param prev_frame_grey: The previous frame in greyscale
     :param prev_frame_points: The previous frame features to track
@@ -77,6 +82,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
             The new previous frame points,
             The new accumulated error
     """
+    # TODO: utilise ORB rather than goodFeaturesToTrack
     # Compare the last key frame to current key frame
     p, st, err = cv2.calcOpticalFlowPyrLK(prev_frame_grey,
                                           frame_grey,
@@ -127,6 +133,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
                     camera_matrix, distortion_coefficients):
     """
     Finds which features in two keyframes match
+
     :param new_keyframe: The keyframe to compare to the previous keyframe
     :param prev_orb_points: The previous keyframe feature points
     :param prev_orb_descriptors: The previous keyframe feature descriptors
@@ -167,6 +174,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     """
     Takes the matches between two frames and finds the rotation and translation of the second frame
+
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
     :param prev_pose: The pose of the left frame in relation to the original frame
@@ -213,9 +221,8 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents, points):
     """
-    Checks through the current tracks and updates them based on the matches.
-    If there are new features a new track is made.
-    If a track is not updated it is tagged.
+    Checks through the current tracks and updates them based on the provided matches
+
     :param tracks: Current tracks
     :param prev_keyframe_ID: The identity number of the previous keyframe
     :param feature_points: The feature point matches from the previous keyframe
@@ -267,6 +274,11 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
 
 class Processor:
     def __init__(self, images):
+        """
+        Instantiates a Processor object for a given video camera
+
+        :param images: Photographs of the calibration image to calibrate the camera
+        """
         self.feature_params = dict(maxCorners=100,
                                    qualityLevel=0.3,
                                    minDistance=7,
@@ -291,11 +303,11 @@ class Processor:
     def process(self, video, display=False):
         """
         Takes a video of a food item and returns the 3D mesh of the food item
+
         :param video: The video to be converted to a 3D mesh
         :param display: Whether the process should be displayed
         :return: A 3D mesh
         """
-        # TODO: utilise ORB rather than goodFeaturesToTrack
         self.display = display
         orb = cv2.ORB_create(nfeatures=2000)
 
