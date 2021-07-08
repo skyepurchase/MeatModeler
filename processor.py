@@ -103,7 +103,7 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
 
 # Greyscale frame and feature points in
 # Greyscale frame and feature points out
-# No distortion removal both frames and points are distorted
+# The frames have distortion removed so feature points are undistorted
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
                      threshold=0.1):
     """
@@ -155,10 +155,9 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
 
 
 # Greyscale frame, feature points, and descriptors in
-# Matched points (undistorted), feature points, and descriptors out
-# Points have distortion removed
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params,
-                    camera_matrix, distortion_coefficients):
+# Matched points, feature points, and descriptors out
+# Points have distortion removed as the frames are undistorted
+def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
     """
     Finds which features in two keyframes match
 
@@ -167,8 +166,6 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     :param prev_orb_descriptors: The previous keyframe feature descriptors
     :param orb: An ORB feature detection object
     :param flann_params: Parameters to tune FLANN matcher
-    :param camera_matrix: The intrinsic matrix for the given camera
-    :param distortion_coefficients: The distortion for the given camera
     :return: List of left frame matched Keypoints,
             List of right frame matched Keypoints,
             The new previous keyframe feature points,
@@ -186,20 +183,13 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
 
-    distorted_left = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
-    distorted_right = np.array([new_points[m.trainIdx].pt for m in good_matches])
+    left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
 
-    undistorted_left = cv2.undistortPoints(np.expand_dims(distorted_left, axis=1),
-                                           camera_matrix,
-                                           distortion_coefficients)
-    undistorted_right = cv2.undistortPoints(np.expand_dims(distorted_right, axis=1),
-                                            camera_matrix,
-                                            distortion_coefficients)
-
-    return undistorted_left, undistorted_right, new_points, new_descriptors
+    return left_matches, right_matches, new_points, new_descriptors
 
 
-# Undistorted point matches and previous frame position in
+# Point matches and previous frame position in
 # Used points and frame position out
 # Points are still undistorted
 def poseEstimation(left_frame_points, right_frame_points, prev_pose):
@@ -215,6 +205,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
             The new previous pose matrix
     """
     # Find essential matrix and inliers
+    # Use focal length as 1 and centre as (0, 0) because frames and points already undistorted
     essential, mask_E = cv2.findEssentialMat(left_frame_points,
                                              right_frame_points,
                                              focal=1.0,
