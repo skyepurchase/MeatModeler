@@ -353,7 +353,7 @@ class Processor:
         :param video: The video to be converted to a 3D mesh
         :return: A 3D mesh
         """
-        orb = cv2.ORB_create(nfeatures=2000)
+        orb = cv2.ORB_create(nfeatures=20000)
 
         cap = cv2.VideoCapture(video)
 
