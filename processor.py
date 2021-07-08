@@ -380,7 +380,7 @@ class Processor:
         keyframe_ID = 1
 
         # Initialise bundling
-        frame_projections = {keyframe_ID: prev_pose}
+        frame_projections = {0: prev_pose}
         points = {}
         feature_lookup = {}
         point_ID = 0
@@ -414,7 +414,8 @@ class Processor:
                 # Pose estimation
                 L_points, R_points, pose = poseEstimation(L_matches,
                                                           R_matches,
-                                                          prev_pose)
+                                                          prev_pose,
+                                                          self.intrinsic)
                 frame_projections[keyframe_ID] = pose
 
                 # Update tracks
@@ -446,7 +447,6 @@ class Processor:
                 prev_pose = pose
                 prev_keyframe_ID = keyframe_ID
                 keyframe_ID += 1
-                point_ID += 1
 
                 # TODO: remove
                 filename = self.path + "Raw\\Image" + str(self.count) + ".jpg"
