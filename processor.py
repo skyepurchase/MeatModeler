@@ -192,7 +192,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 # Point matches and previous frame position in
 # Used points and frame position out
 # Points are still undistorted
-def poseEstimation(left_frame_points, right_frame_points, prev_pose):
+def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matrix):
     """
     Takes the matches between two frames and finds the rotation and translation of the second frame
 
@@ -208,8 +208,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     # Use focal length as 1 and centre as (0, 0) because frames and points already undistorted
     essential, mask_E = cv2.findEssentialMat(left_frame_points,
                                              right_frame_points,
-                                             focal=1.0,
-                                             pp=(0., 0.),
+                                             camera_matrix,
                                              method=cv2.RANSAC,
                                              prob=0.999,
                                              threshold=0.001)
@@ -218,6 +217,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     points, R, t, mask_RP = cv2.recoverPose(essential,
                                             left_frame_points,
                                             right_frame_points,
+                                            camera_matrix,
                                             mask=mask_E)
 
     # Create the 3x4 pose matrices
