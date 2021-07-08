@@ -29,6 +29,7 @@ def calibrate(images):
             The distortion coefficients
     """
     # Prepare chessboard 3D points
+    # TODO: allow different numbers of corners
     objp = np.zeros((7 * 7, 3), np.float32)
     objp[:, :2] = np.mgrid[0:7, 0:7].T.reshape(-1, 2)
 
@@ -100,11 +101,11 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
                 a, b = new.ravel()
                 c, d = old.ravel()
                 mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), color[i].tolist(), 2)
-                frame_grey = cv2.circle(frame_grey, (int(a), int(b)), 5, color[i].tolist(), -1)
+                frame = cv2.circle(frame, (int(a), int(b)), 5, color[i].tolist(), -1)
 
-            img = cv2.add(frame_grey, mask)
-            cv2.imshow("Tracking", img)
-            cv2.waitKey()
+            img = cv2.add(frame, mask)
+            filename = path + "Tracking\\Frame" + str(frame_number) + ".jpg"
+            cv2.imwrite(filename, img)
 
         # Update previous data
         prev_frame_grey = frame_grey
@@ -324,7 +325,6 @@ class Processor:
         Takes a video of a food item and returns the 3D mesh of the food item
 
         :param video: The video to be converted to a 3D mesh
-        :param display: Whether the process should be displayed
         :return: A 3D mesh
         """
         orb = cv2.ORB_create(nfeatures=2000)
