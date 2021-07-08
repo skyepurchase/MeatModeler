@@ -3,6 +3,9 @@ import numpy as np
 from track import Track
 
 
+# Greyscale frame in
+# Frame with increased contrast out
+# Uses CLAHE to normalise the luminosity
 def increaseContrast(frame):
     """
     Increases the contrast of the grey scale images by applying CLAHE to the luminance
@@ -20,6 +23,9 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
+# Chess images in
+# Intrinsic matrix and distortion coefficients out
+# Standard for all frames
 def calibrate(images):
     """
     Takes specific chess board images and calibrates the camera appropriately
@@ -64,6 +70,9 @@ def calibrate(images):
     return None
 
 
+# Greyscale frame and feature points in
+# Greyscale frame and feature points out
+# No distortion removal both frames and points are distorted
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
                      threshold=0.1):
     """
@@ -114,6 +123,9 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
             return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
+# Greyscale frame, feature points, and descriptors in
+# Matched points (undistorted), feature points, and descriptors out
+# Points have distortion removed
 def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params,
                     camera_matrix, distortion_coefficients):
     """
@@ -156,6 +168,9 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return undistorted_left, undistorted_right, new_points, new_descriptors
 
 
+# Undistorted point matches and previous frame position in
+# Used points and frame position out
+# Points are still undistorted
 def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     """
     Takes the matches between two frames and finds the rotation and translation of the second frame
@@ -194,6 +209,9 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose):
     return usable_left_points, usable_right_points, Pose2
 
 
+# Tracks, frame IDs, frame positions, and matches in
+# Tracks (With frame positions and undistorted points) to process and to keep out
+# Points are still undistorted
 def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, keyframe_ID, keyframe_pose,
                   correspondents):
     """
@@ -255,6 +273,9 @@ def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, 
     return popped_tracks, updated_tracks
 
 
+# Frame positions and undistorted points in
+# Single 3D point out
+# 3D point is in world coordinates based on poses
 def triangulation(first_pose, last_pose, features):
     """
     Using the furthest apart frames calculates the 3D position of a given point
