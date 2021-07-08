@@ -293,11 +293,13 @@ def triangulation(first_pose, last_pose, features):
 
 
 class Processor:
-    def __init__(self, images):
+    def __init__(self, images, display=False, path=""):
         """
         Instantiates a Processor object for a given video camera
 
         :param images: Photographs of the calibration image to calibrate the camera
+        :param path: Path to save images along the process
+        :param display: Whether to save the images along the process
         """
         self.feature_params = dict(maxCorners=100,
                                    qualityLevel=0.3,
@@ -314,6 +316,7 @@ class Processor:
         self.intrinsic, self.distortion = calibrate(images)
 
         # Debugging stuff
+        self.path = path
         self.color = np.random.randint(0, 255, (100, 3))
         self.display = False
         self.mask = None
@@ -358,9 +361,8 @@ class Processor:
         feature_lookup = {}
         point_ID = 0
 
-        # Will be removed
-        self.mask = np.zeros_like(start_frame)
-        filename = "C:\\Users\\aidan\\Documents\\BrevilleInternship\\Output\\Raw\\Image0.jpg"
+        # TODO: remove
+        filename = self.path + "Raw\\Image0.jpg"
         cv2.imwrite(filename, start_frame)
 
         # Processing loop
