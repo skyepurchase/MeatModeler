@@ -57,6 +57,7 @@ def calibrate(images):
                                                             gray.shape[::-1],
                                                             None,
                                                             None)
+
     if success:
         return matrix, distortion
 
@@ -64,7 +65,7 @@ def calibrate(images):
 
 
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
-                     threshold=0.3, display=False, color=None, mask=None):
+                     threshold=0.1):
     """
     Determines whether a given frame is a keyframe for further analysis
 
@@ -75,9 +76,6 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
     :param lk_params: Lucas-Kanade parameters
     :param feature_params: GoodFeaturesToTrack parameters
     :param threshold: Proportion of the frame width considered significant
-    :param display: Whether to display the process
-    :param color: The colour of the display points
-    :param mask: The mask for displaying
     :return: A boolean value on whether the frame was a keyframe,
             The new previous grey frame,
             The new previous frame points,
@@ -93,19 +91,6 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
     # Keep only matching points
     if p is not None:
         good_new = p[st == 1]
-        good_prev = prev_frame_points[st == 1]
-
-        # TODO: remove
-        if display:
-            for i, (new, old) in enumerate(zip(good_new, good_prev)):
-                a, b = new.ravel()
-                c, d = old.ravel()
-                mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), color[i].tolist(), 2)
-                frame = cv2.circle(frame, (int(a), int(b)), 5, color[i].tolist(), -1)
-
-            img = cv2.add(frame, mask)
-            filename = path + "Tracking\\Frame" + str(frame_number) + ".jpg"
-            cv2.imwrite(filename, img)
 
         # Update previous data
         prev_frame_grey = frame_grey
@@ -293,13 +278,12 @@ def triangulation(first_pose, last_pose, features):
 
 
 class Processor:
-    def __init__(self, images, display=False, path=""):
+    def __init__(self, images, path):
         """
         Instantiates a Processor object for a given video camera
 
         :param images: Photographs of the calibration image to calibrate the camera
         :param path: Path to save images along the process
-        :param display: Whether to save the images along the process
         """
         self.feature_params = dict(maxCorners=100,
                                    qualityLevel=0.3,
@@ -317,11 +301,7 @@ class Processor:
 
         # Debugging stuff
         self.path = path
-        self.color = np.random.randint(0, 255, (100, 3))
-        self.display = False
-        self.mask = None
         self.count = 1
-        self.num_features = 0
 
     def process(self, video):
         """
@@ -422,8 +402,7 @@ class Processor:
                 keyframe_ID += 1
                 point_ID += 1
 
-                # Will be removed later
-                self.mask = np.zeros_like(frame)
+                # TODO: remove
                 filename = self.path + "Raw\\Image" + str(self.count) + ".jpg"
                 cv2.imwrite(filename, frame)
                 self.count += 1
