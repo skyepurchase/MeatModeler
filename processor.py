@@ -257,8 +257,8 @@ def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, 
     # For each match check if this feature already exists
     for feature_point, correspondent in zip(feature_points, correspondents):
         # Convert to tuples
-        feature_point = (feature_point[0][0], feature_point[0][1])
-        correspondent = (correspondent[0][0], correspondent[0][1])
+        feature_point = (feature_point[0], feature_point[1])
+        correspondent = (correspondent[0], correspondent[1])
 
         is_new_track = True
 
@@ -409,9 +409,7 @@ class Processor:
                                                                                               prev_orb_points,
                                                                                               prev_orb_descriptors,
                                                                                               orb,
-                                                                                              self.flann_params,
-                                                                                              self.intrinsic,
-                                                                                              self.distortion)
+                                                                                              self.flann_params)
 
                 # Pose estimation
                 L_points, R_points, pose = poseEstimation(L_matches,
