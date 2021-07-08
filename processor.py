@@ -440,6 +440,8 @@ class Processor:
                         frame_table[i] = features[i - first_frame_ID]
                     feature_lookup[point_ID] = frame_table
 
+                    point_ID += 1
+
                 # Update variables
                 prev_pose = pose
                 prev_keyframe_ID = keyframe_ID
