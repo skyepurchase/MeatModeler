@@ -97,7 +97,7 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
 
     # Crop the edges
     x, y, w, h = roi
-    undistorted_frame = undistorted_frame[y:y+h, x:x+w]
+    undistorted_frame = undistorted_frame[y:y + h, x:x + w]
 
     return undistorted_frame
 
@@ -200,6 +200,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
     :param prev_pose: The pose of the left frame in relation to the original frame
+    :param camera_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
             The corresponding 3D points,
