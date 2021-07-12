@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import bundleAdjuster
 from track import Track
 
 
@@ -315,7 +316,7 @@ def triangulation(first_pose, last_pose, features):
 
     # Normalise homogeneous (w=1)
     norm_point = homogeneous_point / homogeneous_point[:, -1][:, None]
-    norm_point = norm_point[0]
+    norm_point = norm_point[0][:3]
 
     return norm_point
 
@@ -380,9 +381,11 @@ class Processor:
         keyframe_ID = 1
 
         # Initialise bundling
-        frame_projections = {0: prev_pose}
-        points = {}
-        feature_lookup = {}
+        frame_projections = [prev_pose]
+        points = []
+        observations = []
+        frame_indices = []
+        point_indices = []
         point_ID = 0
 
         # TODO: remove
@@ -393,8 +396,8 @@ class Processor:
         success, frame = cap.read()
 
         while success:
+            frame = undistortFrame(frame, self.intrinsic, self.distortion)
             frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
-            frame_grey = undistortFrame(frame_grey, self.intrinsic, self.distortion)
 
             success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
                                                                                                prev_frame_grey,
@@ -416,7 +419,7 @@ class Processor:
                                                           R_matches,
                                                           prev_pose,
                                                           self.intrinsic)
-                frame_projections[keyframe_ID] = pose
+                frame_projections.append(pose)
 
                 # Update tracks
                 popped_tracks, tracks = pointTracking(tracks,
@@ -433,13 +436,13 @@ class Processor:
 
                     # Get the 3D point and store
                     point = triangulation(first_pose, last_pose, features)
-                    points[point_ID] = point
+                    points.append(point)
 
                     # Relate the features to a frame and point
-                    frame_table = {}
                     for i in range(first_frame_ID, last_frame_ID + 1):
-                        frame_table[i] = features[i - first_frame_ID]
-                    feature_lookup[point_ID] = frame_table
+                        observations.append(features[i - first_frame_ID])
+                        point_indices.append(point_ID)
+                        frame_indices.append(i)
 
                     point_ID += 1
 
@@ -454,3 +457,12 @@ class Processor:
                 self.count += 1
 
             success, frame = cap.read()
+
+        points = np.array(points)
+
+        adjusted_points = bundleAdjuster.bundleAdjustment(np.array(frame_projections),
+                                                          self.intrinsic,
+                                                          points,
+                                                          np.array(observations),
+                                                          np.array(frame_indices),
+                                                          np.array(point_indices))
