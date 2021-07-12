@@ -361,6 +361,7 @@ class Processor:
 
         # Retrieve first frame
         _, start_frame = cap.read()
+        start_frame = undistortFrame(start_frame)
 
         # Initialise keyframe tracking
         prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
