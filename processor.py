@@ -292,14 +292,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Initialise pose estimation
     prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
 
-    # Initialise bundling
-    frame_projections = [prev_pose]
-    points = None
-    observations = []
-    frame_indices = []
-    point_indices = []
-    point_ID = 0
-
     # TODO: remove
     filename = path + "Raw\\Image0.jpg"
     cv2.imwrite(filename, start_frame)
@@ -331,7 +323,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                       R_matches,
                                                       prev_pose,
                                                       intrinsic_matrix)
-            frame_projections.append(pose)
 
             # Triangulation
             new_points = triangulation(prev_pose, pose, np.array(L_points), np.array(R_points))
@@ -341,9 +332,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             #     points = np.concatenate((points, new_points))
 
             # Update variables
-            prev_pose = pose
-            prev_keyframe_ID = keyframe_ID
-            keyframe_ID += 1
+            # prev_pose = pose
+            toc = time.time()
 
             # TODO: remove
             filename = path + "Raw\\Image" + str(count) + ".jpg"
@@ -356,13 +346,3 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             # print()
 
         success, frame = cap.read()
-
-    points = np.array(points)
-    projections = np.array(frame_projections)
-
-    adjusted_points = bundleAdjuster.bundleAdjustment(projections,
-                                                      intrinsic_matrix,
-                                                      points,
-                                                      np.array(observations),
-                                                      np.array(frame_indices),
-                                                      np.array(point_indices))
