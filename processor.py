@@ -321,6 +321,9 @@ def triangulation(first_pose, last_pose, features):
     return norm_point
 
 
+# Video, camera and processing parameters in
+# 3D point cloud out
+# The main processing loop
 def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
