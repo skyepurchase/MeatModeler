@@ -181,7 +181,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 
     # Find which points can be considered new
     good_matches = [match[0] for match in matches if
-                    len(match) == 2 and match[0].distance < 0.75 * match[1].distance]
+                    len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
 
     left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
     right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
@@ -209,10 +209,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
     # Use focal length as 1 and centre as (0, 0) because frames and points already undistorted
     essential, mask_E = cv2.findEssentialMat(left_frame_points,
                                              right_frame_points,
-                                             camera_matrix,
-                                             method=cv2.RANSAC,
-                                             prob=0.999,
-                                             threshold=0.001)
+                                             camera_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
     points, R, t, mask_RP = cv2.recoverPose(essential,
