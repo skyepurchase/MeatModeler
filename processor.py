@@ -352,7 +352,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise feature tracking
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
-    old_frame = prev_frame_grey
 
     # Initialise pose estimation
     prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
@@ -394,9 +393,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           prev_orb_points,
                                                                                           prev_orb_descriptors,
                                                                                           orb,
-                                                                                          flann_params,
-                                                                                          old_frame)
-            old_frame = prev_frame_grey
+                                                                                          flann_params)
 
             # Pose estimation
             L_points, R_points, pose = poseEstimation(L_matches,
