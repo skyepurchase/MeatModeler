@@ -106,7 +106,7 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
 # Greyscale frame and feature points out
 # The frames have distortion removed so feature points are undistorted
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
-                     threshold=0.3):
+                     threshold=0.1):
     """
     Determines whether a given frame is a keyframe for further analysis
 
@@ -207,26 +207,26 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
     """
     # Find essential matrix and inliers
     # Use focal length as 1 and centre as (0, 0) because frames and points already undistorted
-    essential, mask_E = cv2.findEssentialMat(left_frame_points,
-                                             right_frame_points,
+    essential, mask_E = cv2.findEssentialMat(right_frame_points,
+                                             left_frame_points,
                                              camera_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
     points, R, t, mask_RP = cv2.recoverPose(essential,
-                                            left_frame_points,
                                             right_frame_points,
+                                            left_frame_points,
                                             camera_matrix,
                                             mask=mask_E)
 
     # Create the 3x4 pose matrices
     pose_transform = np.vstack([prev_pose, np.array([0, 0, 0, 1])])
-    Pose2 = np.matmul(np.hstack([R, t]), pose_transform)
+    pose = np.matmul(np.hstack([R, t]), pose_transform)
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, Pose2
+    return usable_left_points, usable_right_points, pose
 
 
 # Frame positions and undistorted points in
@@ -337,6 +337,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise pose estimation
     prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
+    poses = [prev_pose]
 
     # Initialise triangulation
     points = None
@@ -372,6 +373,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                       R_matches,
                                                       prev_pose,
                                                       intrinsic_matrix)
+            poses.append(pose)
 
             # Triangulation
             new_points = triangulation(prev_pose, pose, np.array(L_points), np.array(R_points))
@@ -381,8 +383,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 points = np.concatenate((points, new_points))
 
             # Update variables
-            # prev_pose = pose
-            toc = time.time()
+            prev_pose = pose
 
             # TODO: remove
             filename = path + "Raw\\Image" + str(count) + ".jpg"
