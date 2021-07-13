@@ -151,8 +151,8 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
                                                         **feature_params)
 
             return True, prev_frame_grey, prev_frame_points, accumulated_error
-        else:
-            return False, prev_frame_grey, prev_frame_points, accumulated_error
+
+    return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
 # Greyscale frame, feature points, and descriptors in
