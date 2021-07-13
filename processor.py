@@ -232,17 +232,14 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
 # Tracks, frame IDs, frame positions, and matches in
 # Tracks (With frame positions and undistorted points) to process and to keep out
 # Points are still undistorted
-def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, keyframe_ID, keyframe_pose,
-                  correspondents):
+def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
     """
     Checks through the current tracks and updates them based on the provided matches
 
     :param tracks: Current tracks
     :param prev_keyframe_ID: The identity number of the previous keyframe
-    :param prev_keyframe_pose: The absolute pose of the previous keyframe
     :param feature_points: The feature point matches from the previous keyframe
     :param keyframe_ID: The identity number of the current keyframe
-    :param keyframe_pose: The absolute pose of the current keyframe
     :param correspondents: The corresponding feature match
     :return: The tracks to be processed,
             Continuing tracks
@@ -266,17 +263,15 @@ def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, 
 
             # So update the track
             if feature_point == prior_point:
-                track.update(keyframe_ID, keyframe_pose, correspondent)
+                track.update(keyframe_ID, correspondent)
                 is_new_track = False
                 break
 
         # Feature was not found elsewhere
         if is_new_track:
             new_track = Track(prev_keyframe_ID,
-                              prev_keyframe_pose,
                               feature_point,
                               keyframe_ID,
-                              keyframe_pose,
                               correspondent)
             new_tracks.append(new_track)
 
@@ -444,13 +439,11 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                       intrinsic_matrix)
             poses.append(pose)
 
-            # Update tracks
+            # Manage tracks
             popped_tracks, tracks = pointTracking(tracks,
                                                   prev_keyframe_ID,
-                                                  prev_pose,
                                                   L_points,
                                                   keyframe_ID,
-                                                  pose,
                                                   R_points)
 
             # Triangulation
