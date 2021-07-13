@@ -106,7 +106,7 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
 # Greyscale frame and feature points out
 # The frames have distortion removed so feature points are undistorted
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
-                     threshold=0.1):
+                     threshold=0.3):
     """
     Determines whether a given frame is a keyframe for further analysis
 
@@ -181,7 +181,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 
     # Find which points can be considered new
     good_matches = [match[0] for match in matches if
-                    len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
+                    len(match) == 2 and match[0].distance < 0.75 * match[1].distance]
 
     left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
     right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
