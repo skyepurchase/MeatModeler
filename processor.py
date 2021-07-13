@@ -226,7 +226,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, Pose
+    return usable_left_points, usable_right_points, Pose2
 
 
 # Frame positions and undistorted points in
@@ -337,6 +337,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise pose estimation
     prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
+
+    # Initialise triangulation
+    points = None
 
     # TODO: remove
     filename = path + "Raw\\Image0.jpg"
