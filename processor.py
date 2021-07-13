@@ -226,71 +226,7 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, Pose2
-
-
-# Tracks, frame IDs, frame positions, and matches in
-# Tracks (With frame positions and undistorted points) to process and to keep out
-# Points are still undistorted
-def pointTracking(tracks, prev_keyframe_ID, prev_keyframe_pose, feature_points, keyframe_ID, keyframe_pose,
-                  correspondents):
-    """
-    Checks through the current tracks and updates them based on the provided matches
-
-    :param tracks: Current tracks
-    :param prev_keyframe_ID: The identity number of the previous keyframe
-    :param prev_keyframe_pose: The absolute pose of the previous keyframe
-    :param feature_points: The feature point matches from the previous keyframe
-    :param keyframe_ID: The identity number of the current keyframe
-    :param keyframe_pose: The absolute pose of the current keyframe
-    :param correspondents: The corresponding feature match
-    :return: The tracks to be processed,
-            Continuing tracks
-    """
-
-    new_tracks = []
-    updated_tracks = []
-    popped_tracks = []
-
-    # For each match check if this feature already exists
-    for feature_point, correspondent in zip(feature_points, correspondents):
-        # Convert to tuples
-        feature_point = (feature_point[0], feature_point[1])
-        correspondent = (correspondent[0], correspondent[1])
-
-        is_new_track = True
-
-        for track in tracks:
-            # If the current point matches the track's last point then they reference the same feature
-            prior_point = track.getLastPoint()
-
-            # So update the track
-            if feature_point == prior_point:
-                track.update(keyframe_ID, keyframe_pose, correspondent)
-                is_new_track = False
-                break
-
-        # Feature was not found elsewhere
-        if is_new_track:
-            new_track = Track(prev_keyframe_ID,
-                              prev_keyframe_pose,
-                              feature_point,
-                              keyframe_ID,
-                              keyframe_pose,
-                              correspondent)
-            new_tracks.append(new_track)
-
-    for track in tracks:
-        if track.wasUpdated():
-            track.reset()
-            updated_tracks.append(track)
-        else:
-            popped_tracks.append(track)
-
-    # Add new tracks
-    updated_tracks += new_tracks
-
-    return popped_tracks, updated_tracks
+    return usable_left_points, usable_right_points, Pose
 
 
 # Frame positions and undistorted points in
@@ -356,14 +292,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Initialise pose estimation
     prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
 
-    # Initialise point tracking
-    tracks = []
-    prev_keyframe_ID = 0
-    keyframe_ID = 1
-
     # Initialise bundling
     frame_projections = [prev_pose]
-    points = []
+    points = None
     observations = []
     frame_indices = []
     point_indices = []
@@ -402,30 +333,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                       intrinsic_matrix)
             frame_projections.append(pose)
 
-            # Update tracks
-            popped_tracks, tracks = pointTracking(tracks,
-                                                  prev_keyframe_ID,
-                                                  prev_pose,
-                                                  L_points,
-                                                  keyframe_ID,
-                                                  pose,
-                                                  R_points)
-
             # Triangulation
-            for track in popped_tracks:
-                first_frame_ID, first_pose, last_frame_ID, last_pose, features = track.getTriangulationData()
-
-                # Get the 3D point and store
-                point = triangulation(first_pose, last_pose, features)
-                points.append(point)
-
-                # Relate the features to a frame and point
-                for i in range(first_frame_ID, last_frame_ID + 1):
-                    observations.append(features[i - first_frame_ID])
-                    point_indices.append(point_ID)
-                    frame_indices.append(i)
-
-                point_ID += 1
+            new_points = triangulation(prev_pose, pose, np.array(L_points), np.array(R_points))
+            if points is None:
+                points = new_points
+            # else:
+            #     points = np.concatenate((points, new_points))
 
             # Update variables
             prev_pose = pose
