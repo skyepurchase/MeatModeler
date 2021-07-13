@@ -232,26 +232,72 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
 # Frame positions and undistorted points in
 # Single 3D point out
 # 3D point is in world coordinates based on poses
-def triangulation(first_pose, last_pose, features):
-    """
-    Using the furthest apart frames calculates the 3D position of a given point
+def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.e-5):
+    """"""
+    A = np.zeros((4, 3))
+    b = np.zeros((4, 1))
 
-    :param first_pose: The absolute position of the first frame
-    :param last_pose: The absolute position of the last frame
-    :param features: The list of feature image coordinates
-    :return: The resulting 3D point
-    """
-    # Use the poses to find the homogeneous 3D points
-    homogeneous_point = cv2.triangulatePoints(first_pose,
-                                              last_pose,
-                                              np.array(features[0]),
-                                              np.array(features[-1])).T
+    # Create array of triangulated points
+    x = np.empty((4, len(left_points)))
+    x[3, :].fill(1)  # create empty array of homogenous 3D coordinates
+    x_status = np.empty(len(left_points), dtype=int)
 
-    # Normalise homogeneous (w=1)
-    norm_point = homogeneous_point / homogeneous_point[:, -1][:, None]
-    norm_point = norm_point[0][:3]
+    # Initialize C matrices
+    C1 = np.array(-np.eye(2, 3))
+    C2 = np.array(-np.eye(2, 3))
 
-    return norm_point
+    for xi in range(len(left_points)):
+        # Build C matrices, to construct A and b in a concise way
+        C1[:, 2] = left_points[xi, :]
+        C2[:, 2] = right_points[xi, :]
+
+        # Build A matrix
+        A[0:2, :] = C1.dot(first_pose[0:3, 0:3])  # C1 * R1
+        A[2:4, :] = C2.dot(last_pose[0:3, 0:3])  # C2 * R2
+
+        # Build b vector
+        b[0:2, :] = C1.dot(first_pose[0:3, 3:4])  # C1 * t1
+        b[2:4, :] = C2.dot(last_pose[0:3, 3:4])  # C2 * t2
+        b *= -1
+
+        # Init depths
+        d1 = d2 = 1.
+
+        for i in range(10):  # Hartley suggests 10 iterations at most
+            # Solve for x vector
+            cv2.solve(A, b, x[0:3, xi:xi + 1], cv2.DECOMP_SVD)
+
+            # Calculate new depths
+            d1_new = first_pose[2, :].dot(x[:, xi])
+            d2_new = last_pose[2, :].dot(x[:, xi])
+
+            # Set status
+            x_status[xi] = (i < 10 and  # points should have converged by now
+                            (d1_new > 0 and d2_new > 0))  # points should be in front of both cameras
+
+            if d1_new <= 0:
+                x_status[xi] -= 1
+
+            if d2_new <= 0:
+                x_status[xi] -= 2
+
+            if abs(d1_new - d1) <= tolerance and \
+                    abs(d2_new - d2) <= tolerance:
+                break
+
+            # Re-weight A matrix and b vector with the new depths
+            A[0:2, :] *= 1 / d1_new
+            A[2:4, :] *= 1 / d2_new
+            b[0:2, :] *= 1 / d1_new
+            b[2:4, :] *= 1 / d2_new
+
+            # Update depths
+            d1 = d1_new
+            d2 = d2_new
+
+    print(x_status)
+
+    return x[0:3, :].T
 
 
 # Video, camera and processing parameters in
@@ -328,8 +374,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             new_points = triangulation(prev_pose, pose, np.array(L_points), np.array(R_points))
             if points is None:
                 points = new_points
-            # else:
-            #     points = np.concatenate((points, new_points))
+            else:
+                points = np.concatenate((points, new_points))
 
             # Update variables
             # prev_pose = pose
