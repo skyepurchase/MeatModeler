@@ -158,7 +158,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
 # Greyscale frame, feature points, and descriptors in
 # Matched points, feature points, and descriptors out
 # Points have distortion removed as the frames are undistorted
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
+def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params, old_frame):
     """
     Finds which features in two keyframes match
 
@@ -180,7 +180,6 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     matches = flann.knnMatch(prev_orb_descriptors, new_descriptors, k=2)
 
     # Find which points can be considered new
-    # TODO: vectorise following calculations
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
 
@@ -322,149 +321,138 @@ def triangulation(first_pose, last_pose, features):
     return norm_point
 
 
-class Processor:
-    def __init__(self, images, path):
-        """
-        Instantiates a Processor object for a given video camera
+def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, feature_params, flann_params):
+    """
+    Takes a video of a food item and returns the 3D mesh of the food item
 
-        :param images: Photographs of the calibration image to calibrate the camera
-        :param path: Path to save images along the process
-        """
-        self.feature_params = dict(maxCorners=100,
-                                   qualityLevel=0.3,
-                                   minDistance=7,
-                                   blockSize=7)
-        self.lk_params = dict(winSize=(15, 15),
-                              maxLevel=3,
-                              criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        self.flann_params = dict(algorithm=6,
-                                 table_number=6,
-                                 key_size=12,
-                                 multi_probe_level=2)
+    :param video: The video to be converted to a 3D mesh
+    :param path: The path to save images to
+    :param intrinsic_matrix: The intrinsic matrix for the video camera used
+    :param distortion_coefficients: The disrotion coefficients for the video camera used
+    :param lk_params: Lucas-Kanade feature tracking parameters
+    :param feature_params: OpenCV GoodFeaturesToTrack parameters
+    :param flann_params: FLANN feature matching parameters
+    :return: A 3D point cloud
+    """
+    orb = cv2.ORB_create(nfeatures=20000)
 
-        self.intrinsic, self.distortion = calibrate(images)
+    cap = cv2.VideoCapture(video)
 
-        # Debugging stuff
-        self.path = path
-        self.count = 1
+    # Retrieve first frame
+    _, start_frame = cap.read()
+    start_frame = undistortFrame(start_frame, intrinsic_matrix, distortion_coefficients)
+    count = 1
 
-    def process(self, video):
-        """
-        Takes a video of a food item and returns the 3D mesh of the food item
+    # Initialise keyframe tracking
+    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+    prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
+                                                mask=None,
+                                                **feature_params)
+    accumulative_error = 0
 
-        :param video: The video to be converted to a 3D mesh
-        :return: A 3D mesh
-        """
-        orb = cv2.ORB_create(nfeatures=20000)
+    # Initialise feature tracking
+    prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
+    old_frame = prev_frame_grey
 
-        cap = cv2.VideoCapture(video)
+    # Initialise pose estimation
+    prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
 
-        # Retrieve first frame
-        _, start_frame = cap.read()
-        start_frame = undistortFrame(start_frame)
+    # Initialise point tracking
+    tracks = []
+    prev_keyframe_ID = 0
+    keyframe_ID = 1
 
-        # Initialise keyframe tracking
-        prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
-        prev_frame_grey = undistortFrame(prev_frame_grey, self.intrinsic, self.distortion)
-        prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
-                                                    mask=None,
-                                                    **self.feature_params)
-        accumulative_error = 0
+    # Initialise bundling
+    frame_projections = [prev_pose]
+    points = []
+    observations = []
+    frame_indices = []
+    point_indices = []
+    point_ID = 0
 
-        # Initialise feature tracking
-        prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
+    # TODO: remove
+    filename = path + "Raw\\Image0.jpg"
+    cv2.imwrite(filename, start_frame)
 
-        # Initialise pose estimation
-        prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
+    # Processing loop
+    success, frame = cap.read()
 
-        # Initialise point tracking
-        tracks = []
-        prev_keyframe_ID = 0
-        keyframe_ID = 1
+    while success:
+        frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
+        frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
-        # Initialise bundling
-        frame_projections = [prev_pose]
-        points = []
-        observations = []
-        frame_indices = []
-        point_indices = []
-        point_ID = 0
+        success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
+                                                                                           prev_frame_grey,
+                                                                                           prev_frame_points,
+                                                                                           accumulative_error,
+                                                                                           lk_params,
+                                                                                           feature_params)
 
-        # TODO: remove
-        filename = self.path + "Raw\\Image0.jpg"
-        cv2.imwrite(filename, start_frame)
+        if success:
+            # Calculate matches
+            L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
+                                                                                          prev_orb_points,
+                                                                                          prev_orb_descriptors,
+                                                                                          orb,
+                                                                                          flann_params,
+                                                                                          old_frame)
+            old_frame = prev_frame_grey
 
-        # Processing loop
+            # Pose estimation
+            L_points, R_points, pose = poseEstimation(L_matches,
+                                                      R_matches,
+                                                      prev_pose,
+                                                      intrinsic_matrix)
+            frame_projections.append(pose)
+
+            # Update tracks
+            popped_tracks, tracks = pointTracking(tracks,
+                                                  prev_keyframe_ID,
+                                                  prev_pose,
+                                                  L_points,
+                                                  keyframe_ID,
+                                                  pose,
+                                                  R_points)
+
+            # Triangulation
+            for track in popped_tracks:
+                first_frame_ID, first_pose, last_frame_ID, last_pose, features = track.getTriangulationData()
+
+                # Get the 3D point and store
+                point = triangulation(first_pose, last_pose, features)
+                points.append(point)
+
+                # Relate the features to a frame and point
+                for i in range(first_frame_ID, last_frame_ID + 1):
+                    observations.append(features[i - first_frame_ID])
+                    point_indices.append(point_ID)
+                    frame_indices.append(i)
+
+                point_ID += 1
+
+            # Update variables
+            prev_pose = pose
+            prev_keyframe_ID = keyframe_ID
+            keyframe_ID += 1
+
+            # TODO: remove
+            filename = path + "Raw\\Image" + str(count) + ".jpg"
+            cv2.imwrite(filename, frame)
+            count += 1
+            # print("Number of new points:", len(prev_orb_points))
+            # print("Number of matches:", len(L_matches))
+            # print("Number of which usable:", len(L_points))
+            # print("Number of tracks popped:", len(popped_tracks))
+            # print()
+
         success, frame = cap.read()
 
-        while success:
-            frame = undistortFrame(frame, self.intrinsic, self.distortion)
-            frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+    points = np.array(points)
+    projections = np.array(frame_projections)
 
-            success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
-                                                                                               prev_frame_grey,
-                                                                                               prev_frame_points,
-                                                                                               accumulative_error,
-                                                                                               self.lk_params,
-                                                                                               self.feature_params)
-
-            if success:
-                # Calculate matches
-                L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                              prev_orb_points,
-                                                                                              prev_orb_descriptors,
-                                                                                              orb,
-                                                                                              self.flann_params)
-
-                # Pose estimation
-                L_points, R_points, pose = poseEstimation(L_matches,
-                                                          R_matches,
-                                                          prev_pose,
-                                                          self.intrinsic)
-                frame_projections.append(pose)
-
-                # Update tracks
-                popped_tracks, tracks = pointTracking(tracks,
-                                                      prev_keyframe_ID,
-                                                      prev_pose,
-                                                      L_points,
-                                                      keyframe_ID,
-                                                      pose,
-                                                      R_points)
-
-                # Triangulation
-                for track in popped_tracks:
-                    first_frame_ID, first_pose, last_frame_ID, last_pose, features = track.getTriangulationData()
-
-                    # Get the 3D point and store
-                    point = triangulation(first_pose, last_pose, features)
-                    points.append(point)
-
-                    # Relate the features to a frame and point
-                    for i in range(first_frame_ID, last_frame_ID + 1):
-                        observations.append(features[i - first_frame_ID])
-                        point_indices.append(point_ID)
-                        frame_indices.append(i)
-
-                    point_ID += 1
-
-                # Update variables
-                prev_pose = pose
-                prev_keyframe_ID = keyframe_ID
-                keyframe_ID += 1
-
-                # TODO: remove
-                filename = self.path + "Raw\\Image" + str(self.count) + ".jpg"
-                cv2.imwrite(filename, frame)
-                self.count += 1
-
-            success, frame = cap.read()
-
-        points = np.array(points)
-
-        adjusted_points = bundleAdjuster.bundleAdjustment(np.array(frame_projections),
-                                                          self.intrinsic,
-                                                          points,
-                                                          np.array(observations),
-                                                          np.array(frame_indices),
-                                                          np.array(point_indices))
+    adjusted_points = bundleAdjuster.bundleAdjustment(projections,
+                                                      intrinsic_matrix,
+                                                      points,
+                                                      np.array(observations),
+                                                      np.array(frame_indices),
+                                                      np.array(point_indices))
