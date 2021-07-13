@@ -354,8 +354,6 @@ def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.
             d1 = d1_new
             d2 = d2_new
 
-    print(x_status)
-
     return x[0:3, :].T
 
 
@@ -446,12 +444,34 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                   keyframe_ID,
                                                   R_points)
 
+            # Join together all the points for pairs of frames
+            pairs = {}
+            for track in popped_tracks:
+                ID1, ID2, coordinates = track.getTriangulationData()
+                pair = [coordinates[0], coordinates[-1]]
+                identifier = str(ID1) + "-" + str(ID2)
+
+                if identifier in pairs:
+                    pairs[identifier].append(pair)
+                else:
+                    pairs[identifier] = [pair]
+
             # Triangulation
-            new_points = triangulation(prev_pose, pose, np.array(L_points), np.array(R_points))
-            if points is None:
-                points = new_points
-            else:
-                points = np.concatenate((points, new_points))
+            for identifier, coordinates in pairs.items():
+                frames = identifier.split("-")
+                pose1 = poses[int(frames[0])]
+                pose2 = poses[int(frames[1])]
+
+                coordinates = np.array(coordinates)
+                left_points = coordinates[:, 0, :]
+                right_points = coordinates[:, 1, :]
+
+                new_points = triangulation(pose1, pose2, left_points, right_points)
+
+                if points is None:
+                    points = new_points
+                else:
+                    points = np.concatenate((points, new_points))
 
             # Update variables
             prev_pose = pose
