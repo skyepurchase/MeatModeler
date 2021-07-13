@@ -158,7 +158,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
 # Greyscale frame, feature points, and descriptors in
 # Matched points, feature points, and descriptors out
 # Points have distortion removed as the frames are undistorted
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params, old_frame):
+def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
     """
     Finds which features in two keyframes match
 
