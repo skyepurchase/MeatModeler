@@ -415,10 +415,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Initialise triangulation
     points = None
 
-    # TODO: remove
-    filename = path + "Raw\\Image0.jpg"
-    cv2.imwrite(filename, start_frame)
-
     # Processing loop
     success, frame = cap.read()
 
@@ -499,13 +495,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             keyframe_ID += 1
 
             # TODO: remove
-            filename = path + "Raw\\Image" + str(count) + ".jpg"
-            cv2.imwrite(filename, frame)
-            count += 1
-            # print("Number of new points:", len(prev_orb_points))
-            # print("Number of matches:", len(L_matches))
-            # print("Number of which usable:", len(L_points))
-            # print("Number of tracks popped:", len(popped_tracks))
-            # print()
+            print("Number of new points:", len(prev_orb_points))
+            print("Number of matches:", len(L_matches))
+            print("Number of which usable:", len(L_points))
+            print("Number of tracks popped:", len(popped_tracks))
+            if points is not None:
+                print("Total number of points:", len(points))
+            else:
+                print("No points created.")
+            print()
 
         success, frame = cap.read()
