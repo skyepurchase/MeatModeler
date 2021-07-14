@@ -192,7 +192,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 # Point matches and previous frame position in
 # Used points and frame position out
 # Points are still undistorted
-def poseEstimation(left_frame_points, right_frame_points, origin_to_left, left_to_origin, camera_matrix):
+def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
@@ -200,7 +200,6 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, left_t
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
     :param origin_to_left: 4x4 matrix converting origin coordinates to left frame coordinates
-    :param left_to_origin: 4x4 matrix converting left frame coordinates to origin coordinates
     :param camera_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
@@ -208,45 +207,31 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, left_t
             The new previous pose matrix
     """
     # Find essential matrix and inliers
-    essential_right_to_left, mask_E = cv2.findEssentialMat(right_frame_points,
+    essential_left_to_right, mask_E = cv2.findEssentialMat(right_frame_points,
                                                            left_frame_points,
-                                                           camera_matrix)
-    essential_left_to_right, mask_E = cv2.findEssentialMat(left_frame_points,
-                                                           right_frame_points,
                                                            camera_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R_right_to_left, t_right_to_left, mask_RP1 = cv2.recoverPose(essential_right_to_left,
-                                                                    right_frame_points,
-                                                                    left_frame_points,
-                                                                    camera_matrix,
-                                                                    mask=mask_E)
-    _, R_left_to_right, t_left_to_right, mask_RP2 = cv2.recoverPose(essential_right_to_left,
-                                                                    right_frame_points,
-                                                                    left_frame_points,
-                                                                    camera_matrix,
-                                                                    mask=mask_E)
+    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_left_to_right,
+                                                                   right_frame_points,
+                                                                   left_frame_points,  # Potentially swap
+                                                                   camera_matrix,
+                                                                   mask=mask_E)
 
-    # Frame pair transformations
     # Create the 4x3 pose matrix from rotation and translation
     transform_left_to_right = np.hstack([R_left_to_right, t_left_to_right])
+
     # Convert to homogeneous 4x4 transformation matrix
     transform_left_to_right = np.vstack((transform_left_to_right, np.array([0, 0, 0, 1])))
 
-    transform_right_to_left = np.hstack([R_right_to_left, t_right_to_left])
-    transform_right_to_left = np.vstack((transform_right_to_left, np.array([0, 0, 0, 1])))
-
-    # Origin transformations
     # Take world coordinates to left frame then to right frame
     transform_origin_to_right = np.matmul(transform_left_to_right, origin_to_left)
-    # Take right frame coordinates to left frame then take those to origin
-    transform_right_to_origin = np.matmul(left_to_origin, transform_right_to_left)
 
     # Usable points
-    usable_left_points = left_frame_points[(mask_RP1[:, 0] == 1) & (mask_RP2[:, 0] == 1)]
-    usable_right_points = right_frame_points[(mask_RP1[:, 0] == 1) & (mask_RP2[:, 0] == 1)]
+    usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
+    usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, transform_origin_to_right, transform_right_to_origin
+    return usable_left_points, usable_right_points, transform_origin_to_right
 
 
 # Tracks, frame IDs, frame positions, and matches in
@@ -418,9 +403,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise pose estimation
     origin_to_left = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-    left_to_origin = np.eye(4, 4)
     origin_to_frame = [origin_to_left]  # The first keyframe is added
-    frame_to_origin = [left_to_origin]
 
     # Initialise point tracking
     tracks = []
@@ -457,13 +440,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           flann_params)
 
             # Pose estimation
-            L_points, R_points, origin_to_right, right_to_origin = poseEstimation(L_matches,
-                                                                                  R_matches,
-                                                                                  origin_to_left,
-                                                                                  left_to_origin,
-                                                                                  intrinsic_matrix)
+            L_points, R_points, origin_to_right = poseEstimation(L_matches,
+                                                                 R_matches,
+                                                                 origin_to_left,
+                                                                 intrinsic_matrix)
+
             origin_to_frame.append(origin_to_right)
-            frame_to_origin.append(right_to_origin)
 
             # Manage tracks
             popped_tracks, tracks = pointTracking(tracks,
@@ -506,7 +488,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
-            left_to_origin = right_to_origin
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
