@@ -192,13 +192,12 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 # Point matches and previous frame position in
 # Used points and frame position out
 # Points are still undistorted
-def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matrix):
+def poseEstimation(left_frame_points, right_frame_points, prev_right_to_left, prev_left_to_right, camera_matrix):
     """
     Takes the matches between two frames and finds the rotation and translation of the second frame
 
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
-    :param prev_pose: The pose of the left frame in relation to the original frame
     :param camera_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
@@ -206,27 +205,37 @@ def poseEstimation(left_frame_points, right_frame_points, prev_pose, camera_matr
             The new previous pose matrix
     """
     # Find essential matrix and inliers
-    # Use focal length as 1 and centre as (0, 0) because frames and points already undistorted
-    essential, mask_E = cv2.findEssentialMat(right_frame_points,
-                                             left_frame_points,
-                                             camera_matrix)
+    essential_right_to_left, mask_E = cv2.findEssentialMat(right_frame_points,
+                                                           left_frame_points,
+                                                           camera_matrix)
+    essential_left_to_right, mask_E = cv2.findEssentialMat(left_frame_points,
+                                                           right_frame_points,
+                                                           camera_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    points, R, t, mask_RP = cv2.recoverPose(essential,
-                                            right_frame_points,
-                                            left_frame_points,
-                                            camera_matrix,
-                                            mask=mask_E)
+    _, R_right_to_left, t_right_to_left, mask_RP1 = cv2.recoverPose(essential_right_to_left,
+                                                                    right_frame_points,
+                                                                    left_frame_points,
+                                                                    camera_matrix,
+                                                                    mask=mask_E)
+    _, R_left_to_right, t_left_to_right, mask_RP2 = cv2.recoverPose(essential_right_to_left,
+                                                                    right_frame_points,
+                                                                    left_frame_points,
+                                                                    camera_matrix,
+                                                                    mask=mask_E)
 
     # Create the 3x4 pose matrices
-    pose_transform = np.vstack([prev_pose, np.array([0, 0, 0, 1])])
-    pose = np.matmul(np.hstack([R, t]), pose_transform)
+    right_to_left_transformation = np.vstack([prev_right_to_left, np.array([0, 0, 0, 1])])
+    left_to_right_transformation = np.vstack([prev_left_to_right, np.array([0, 0, 0, 1])])
+
+    transform_right_to_left = np.matmul(np.hstack([R_right_to_left, t_right_to_left]), right_to_left_transformation)
+    transform_left_to_right = np.matmul(np.hstack([R_left_to_right, t_left_to_right]), left_to_right_transformation)
 
     # Usable points
-    usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
-    usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
+    usable_left_points = left_frame_points[(mask_RP1[:, 0] == 1) & (mask_RP2[:, 0] == 1)]
+    usable_right_points = right_frame_points[(mask_RP1[:, 0] == 1) & (mask_RP2[:, 0] == 1)]
 
-    return usable_left_points, usable_right_points, pose
+    return usable_left_points, usable_right_points, transform_right_to_left, transform_left_to_right
 
 
 # Tracks, frame IDs, frame positions, and matches in
@@ -397,8 +406,10 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    prev_pose = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
-    poses = [prev_pose]
+    prev_left_to_right = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
+    prev_right_to_left = np.hstack([np.eye(3, 3), np.zeros((3, 1))])
+    left_to_right_poses = [prev_left_to_right]
+    right_to_left_poses = [prev_left_to_right]
 
     # Initialise point tracking
     tracks = []
@@ -435,52 +446,56 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           flann_params)
 
             # Pose estimation
-            L_points, R_points, pose = poseEstimation(L_matches,
-                                                      R_matches,
-                                                      prev_pose,
-                                                      intrinsic_matrix)
-            poses.append(pose)
+            L_points, R_points, right_to_left, left_to_right = poseEstimation(L_matches,
+                                                                              R_matches,
+                                                                              prev_right_to_left,
+                                                                              prev_left_to_right,
+                                                                              intrinsic_matrix)
+            left_to_right_poses.append(left_to_right)
+            right_to_left_poses.append(right_to_left)
 
-            # Manage tracks
-            popped_tracks, tracks = pointTracking(tracks,
-                                                  prev_keyframe_ID,
-                                                  L_points,
-                                                  keyframe_ID,
-                                                  R_points)
-
-            # Join together all the points for pairs of frames
-            pairs = {}
-            for track in popped_tracks:
-                ID1, ID2, coordinates = track.getTriangulationData()
-                pair = [coordinates[0], coordinates[-1]]
-                identifier = str(ID1) + "-" + str(ID2)
-
-                if identifier in pairs:
-                    pairs[identifier].append(pair)
-                else:
-                    pairs[identifier] = [pair]
-
-            # Triangulation
-            for identifier, coordinates in pairs.items():
-                frames = identifier.split("-")
-                pose1 = poses[int(frames[0])]
-                pose2 = poses[int(frames[1])]
-
-                coordinates = np.array(coordinates)
-                left_points = coordinates[:, 0, :]
-                right_points = coordinates[:, 1, :]
-
-                new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
-                new_points = new_points[:, :3] / new_points[:, 3][:, None]
-                new_points = new_points[:, :3]
-
-                if points is None:
-                    points = new_points
-                else:
-                    points = np.concatenate((points, new_points))
+            # # Manage tracks
+            # popped_tracks, tracks = pointTracking(tracks,
+            #                                       prev_keyframe_ID,
+            #                                       L_points,
+            #                                       keyframe_ID,
+            #                                       R_points)
+            #
+            # # Join together all the points for pairs of frames
+            # pairs = {}
+            # for track in popped_tracks:
+            #     ID1, ID2, coordinates = track.getTriangulationData()
+            #     pair = [coordinates[0], coordinates[-1]]
+            #     identifier = str(ID1) + "-" + str(ID2)
+            #
+            #     if identifier in pairs:
+            #         pairs[identifier].append(pair)
+            #     else:
+            #         pairs[identifier] = [pair]
+            #
+            # # Triangulation
+            # for identifier, coordinates in pairs.items():
+            #     frames = identifier.split("-")
+            #     pose1 = left_to_right_poses[int(frames[0])]
+            #     pose2 = right_to_left_poses[int(frames[1])]
+            #
+            #     coordinates = np.array(coordinates)
+            #     left_points = coordinates[:, 0, :]
+            #     right_points = coordinates[:, 1, :]
+            #
+            #     # new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
+            #     # new_points = new_points[:, :3] / new_points[:, 3][:, None]
+            #     # new_points = new_points[:, :3]
+            #     new_points = triangulation(pose2, pose1, left_points, right_points)
+            #
+            #     if points is None:
+            #         points = new_points
+            #     else:
+            #         points = np.concatenate((points, new_points))
 
             # Update variables
-            prev_pose = pose
+            prev_right_to_left = right_to_left
+            prev_left_to_right = left_to_right
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
