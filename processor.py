@@ -465,26 +465,31 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                     pairs[identifier].append(pair)
                 else:
                     pairs[identifier] = [pair]
-            #
-            # # Triangulation
-            # for identifier, coordinates in pairs.items():
-            #     frames = identifier.split("-")
-            #     pose1 = left_to_right_poses[int(frames[0])]
-            #     pose2 = right_to_left_poses[int(frames[1])]
-            #
-            #     coordinates = np.array(coordinates)
-            #     left_points = coordinates[:, 0, :]
-            #     right_points = coordinates[:, 1, :]
-            #
-            #     # new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
-            #     # new_points = new_points[:, :3] / new_points[:, 3][:, None]
-            #     # new_points = new_points[:, :3]
-            #     new_points = triangulation(pose2, pose1, left_points, right_points)
-            #
-            #     if points is None:
-            #         points = new_points
-            #     else:
-            #         points = np.concatenate((points, new_points))
+
+            # Triangulation
+            for identifier, coordinates in pairs.items():
+                frames = identifier.split("-")
+
+                # Get conversions
+                convert_origin_to_left = origin_to_frame[int(frames[0])][:3, :]
+                convert_origin_to_right = origin_to_frame[int(frames[1])][:3, :]
+
+                # Create poses
+                pose1 = np.dot(intrinsic_matrix, convert_origin_to_left)
+                pose2 = np.dot(intrinsic_matrix, convert_origin_to_right)
+
+                # Get coordinates
+                coordinates = np.array(coordinates)
+                left_points = coordinates[:, 0, :]
+                right_points = coordinates[:, 1, :]
+
+                # Triangulate points
+                new_points = triangulation(pose1, pose2, left_points, right_points)
+
+                if points is None:
+                    points = new_points
+                else:
+                    points = np.concatenate((points, new_points))
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
