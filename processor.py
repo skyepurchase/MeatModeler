@@ -496,17 +496,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
-            # TODO: remove
-            print("Number of new points:", len(prev_orb_points))
-            print("Number of matches:", len(L_matches))
-            print("Number of which usable:", len(L_points))
-            print("Number of tracks popped:", len(popped_tracks))
-            if points is not None:
-                print("Total number of points:", len(points))
-            else:
-                print("No points created.")
-            print()
-
         success, frame = cap.read()
 
     filename = path + "Cloud.ply"
