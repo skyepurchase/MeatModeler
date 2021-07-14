@@ -470,7 +470,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 left_points = coordinates[:, 0, :]
                 right_points = coordinates[:, 1, :]
 
-                new_points = triangulation(pose1, pose2, left_points, right_points)
+                new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
+                new_points = new_points[:, :3] / new_points[:, 3][:, None]
+                new_points = new_points[:, :3]
 
                 if points is None:
                     points = new_points
