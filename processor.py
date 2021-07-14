@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import pandas as pd
+from pyntcloud import PyntCloud
 import bundleAdjuster
 from track import Track
 
@@ -506,3 +508,10 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             print()
 
         success, frame = cap.read()
+
+    filename = path + "Cloud.ply"
+    cloud = PyntCloud(pd.DataFrame(
+        data=points,
+        columns=['x', 'y', 'z']
+    ))
+    cloud.to_file(filename)
