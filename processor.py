@@ -39,8 +39,7 @@ def calibrate(images, corners=(7, 7)):
             The distortion coefficients
     """
     # Prepare chessboard 3D points
-    # TODO: allow different numbers of corners
-    x, y= corners
+    x, y = corners
     objp = np.zeros((x * y, 3), np.float32)
     objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
@@ -393,7 +392,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Retrieve first frame
     _, start_frame = cap.read()
     start_frame = undistortFrame(start_frame, intrinsic_matrix, distortion_coefficients)
-    count = 1
 
     # Initialise keyframe tracking
     prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
