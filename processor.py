@@ -29,17 +29,17 @@ def increaseContrast(frame):
 # Chess images in
 # Intrinsic matrix and distortion coefficients out
 # Standard for all frames
-def calibrate(images, corners=(7, 7)):
+def calibrate(images, corner_dims=(7, 7)):
     """
     Takes specific chess board images and calibrates the camera appropriately
 
     :param images: A list of different images of a known chessboard
-    :param corners: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
+    :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
     :return: The intrinsic property matrix,
             The distortion coefficients
     """
     # Prepare chessboard 3D points
-    x, y = corners
+    x, y = corner_dims
     objp = np.zeros((x * y, 3), np.float32)
     objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
@@ -52,7 +52,7 @@ def calibrate(images, corners=(7, 7)):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Find the chessboard corners
-        success, corners = cv2.findChessboardCorners(gray, corners, None)
+        success, corners = cv2.findChessboardCorners(gray, corner_dims, None)
 
         # If found, add object points, image points
         if success:
