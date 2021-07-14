@@ -465,24 +465,24 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             origin_to_frame.append(origin_to_right)
             frame_to_origin.append(right_to_origin)
 
-            # # Manage tracks
-            # popped_tracks, tracks = pointTracking(tracks,
-            #                                       prev_keyframe_ID,
-            #                                       L_points,
-            #                                       keyframe_ID,
-            #                                       R_points)
-            #
-            # # Join together all the points for pairs of frames
-            # pairs = {}
-            # for track in popped_tracks:
-            #     ID1, ID2, coordinates = track.getTriangulationData()
-            #     pair = [coordinates[0], coordinates[-1]]
-            #     identifier = str(ID1) + "-" + str(ID2)
-            #
-            #     if identifier in pairs:
-            #         pairs[identifier].append(pair)
-            #     else:
-            #         pairs[identifier] = [pair]
+            # Manage tracks
+            popped_tracks, tracks = pointTracking(tracks,
+                                                  prev_keyframe_ID,
+                                                  L_points,
+                                                  keyframe_ID,
+                                                  R_points)
+
+            # Join together all the points for pairs of frames
+            pairs = {}
+            for track in popped_tracks:
+                ID1, ID2, coordinates = track.getTriangulationData()
+                pair = [coordinates[0], coordinates[-1]]
+                identifier = str(ID1) + "-" + str(ID2)
+
+                if identifier in pairs:
+                    pairs[identifier].append(pair)
+                else:
+                    pairs[identifier] = [pair]
             #
             # # Triangulation
             # for identifier, coordinates in pairs.items():
