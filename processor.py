@@ -410,7 +410,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Initialise pose estimation
     origin_to_left = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
     original_pose = np.dot(intrinsic_matrix, origin_to_left[:3])  # But needs to be placed into world coordinates
-    poses = [original_pose]  # The first keyframe is added (the tran
+    poses = [original_pose]  # The first keyframe is added
+    transforms = [origin_to_left]
 
     # Initialise point tracking
     tracks = []
@@ -455,6 +456,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                        intrinsic_matrix)
 
             poses.append(pose)
+            transforms.append(origin_to_right)
 
             # Manage tracks
             popped_tracks, tracks = pointTracking(tracks,
