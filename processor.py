@@ -515,7 +515,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                         points_2d.append(point_2d)
                         frame_indices.append(frame_ID1 + i)
                         point_indices.append(point_ID)
-                        point_ID += 1
+
+                    point_ID += 1
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
