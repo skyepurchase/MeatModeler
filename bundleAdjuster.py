@@ -112,9 +112,11 @@ def reshapeResults(result, camera_matrix, n_frames, n_points):
     :return: converted
     """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
+    points = np.dot(camera_matrix, points.T).T
 
     frame_parameters = result.x[:n_frames * 6].reshape((n_frames, 6))
     frame_positions = frame_parameters[:, :3]
+    frame_positions = np.dot(camera_matrix, frame_positions.T).T
 
     return points, frame_positions
 
