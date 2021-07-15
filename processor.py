@@ -366,7 +366,8 @@ def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.
             d2 = d2_new
 
     # Return only the points in front of both cameras
-    x = x[:3, :].T
+    x = x[:4, :].T
+    x = x[:, :3] / x[:, -1][:, None]
     x = x[np.expand_dims(x_status, axis=1)[:, 0] == 1]
 
     return x
