@@ -7,9 +7,6 @@ import bundleAdjuster
 from track import Track
 
 
-# Greyscale frame in
-# Frame with increased contrast out
-# Uses CLAHE to normalise the luminosity
 def increaseContrast(frame):
     """
     Increases the contrast of the grey scale images by applying CLAHE to the luminance
@@ -27,9 +24,6 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
-# Chess images in
-# Intrinsic matrix and distortion coefficients out
-# Standard for all frames
 def calibrate(images, corner_dims=(7, 7)):
     """
     Takes specific chess board images and calibrates the camera appropriately
@@ -75,9 +69,6 @@ def calibrate(images, corner_dims=(7, 7)):
     return None
 
 
-# Frame, camera_matrix, and distortion coefficients in
-# Undistorted frame out
-# Do not need to undistort points later on
 def undistortFrame(frame, camera_matrix, distortion_coefficients):
     """
     Takes a frame and removes the distortion cause by the camera
@@ -106,9 +97,6 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
     return undistorted_frame
 
 
-# Greyscale frame and feature points in
-# Greyscale frame and feature points out
-# The frames have distortion removed so feature points are undistorted
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
                      threshold=0.1):
     """
@@ -159,9 +147,6 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
     return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
-# Greyscale frame, feature points, and descriptors in
-# Matched points, feature points, and descriptors out
-# Points have distortion removed as the frames are undistorted
 def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
     """
     Finds which features in two keyframes match
@@ -193,9 +178,6 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return left_matches, right_matches, new_points, new_descriptors
 
 
-# Point matches and previous frame position in
-# Used points and frame position out
-# Points are still undistorted
 def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
@@ -241,9 +223,6 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera
     return usable_left_points, usable_right_points, transform_origin_to_right, pose
 
 
-# Tracks, frame IDs, frame positions, and matches in
-# Tracks (With frame positions and undistorted points) to process and to keep out
-# Points are still undistorted
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
     """
     Checks through the current tracks and updates them based on the provided matches
@@ -300,9 +279,6 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-# Frame positions and undistorted points in
-# Single 3D point out
-# 3D point is in world coordinates based on poses
 def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.e-5):
     """"""
     A = np.zeros((4, 3))
