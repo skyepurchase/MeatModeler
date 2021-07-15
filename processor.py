@@ -230,11 +230,14 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera
     # Take world coordinates to left frame then to right frame
     transform_origin_to_right = np.matmul(transform_left_to_right, origin_to_left)
 
+    # The real world pose
+    pose = np.dot(camera_matrix, transform_origin_to_right)
+
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, transform_origin_to_right
+    return usable_left_points, usable_right_points, transform_origin_to_right, pose
 
 
 # Tracks, frame IDs, frame positions, and matches in
@@ -405,7 +408,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise pose estimation
     origin_to_left = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-    origin_to_frame = [origin_to_left]  # The first keyframe is added
+    original_pose = np.dot(intrinsic_matrix, origin_to_left)  # But needs to be placed into world coordinates
+    poses = [original_pose]  # The first keyframe is added (the tran
 
     # Initialise point tracking
     tracks = []
@@ -438,12 +442,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           flann_params)
 
             # Pose estimation
-            L_points, R_points, origin_to_right = poseEstimation(L_matches,
-                                                                 R_matches,
-                                                                 origin_to_left,
-                                                                 intrinsic_matrix)
+            L_points, R_points, origin_to_right, pose = poseEstimation(L_matches,
+                                                                       R_matches,
+                                                                       origin_to_left,
+                                                                       intrinsic_matrix)
 
-            origin_to_frame.append(origin_to_right)
+            poses.append(pose)
 
             # Manage tracks
             popped_tracks, tracks = pointTracking(tracks,
@@ -468,13 +472,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             for identifier, coordinates in pairs.items():
                 frames = identifier.split("-")
 
-                # Get conversions
-                convert_origin_to_left = origin_to_frame[int(frames[0])][:3, :]
-                convert_origin_to_right = origin_to_frame[int(frames[1])][:3, :]
-
-                # Create poses
-                pose1 = np.dot(intrinsic_matrix, convert_origin_to_left)
-                pose2 = np.dot(intrinsic_matrix, convert_origin_to_right)
+                # Get poses
+                pose1 = poses[int(frames[0])][:3, :]
+                pose2 = poses[int(frames[1])][:3, :]
 
                 # Get coordinates
                 coordinates = np.array(coordinates)
