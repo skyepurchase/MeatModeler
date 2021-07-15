@@ -497,6 +497,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         success, frame = cap.read()
 
+    points = np.einsum("ij,...j", intrinsic_matrix, points)
+
     filename = path + "Cloud.ply"
     cloud = PyntCloud(pd.DataFrame(
         data=points,
