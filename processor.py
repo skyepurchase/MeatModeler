@@ -231,7 +231,7 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera
     transform_origin_to_right = np.matmul(transform_left_to_right, origin_to_left)
 
     # The real world pose
-    pose = np.dot(camera_matrix, transform_origin_to_right)
+    pose = np.dot(camera_matrix, transform_origin_to_right[:3])
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
@@ -408,7 +408,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise pose estimation
     origin_to_left = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-    original_pose = np.dot(intrinsic_matrix, origin_to_left)  # But needs to be placed into world coordinates
+    original_pose = np.dot(intrinsic_matrix, origin_to_left[:3])  # But needs to be placed into world coordinates
     poses = [original_pose]  # The first keyframe is added (the tran
 
     # Initialise point tracking
