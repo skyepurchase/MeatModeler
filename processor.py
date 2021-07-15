@@ -524,6 +524,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         success, frame = cap.read()
 
+    points = bundleAdjuster.bundleAdjustment(np.array(transforms),
+                                             intrinsic_matrix,
+                                             points,
+                                             np.array(points_2d),
+                                             np.array(frame_indices),
+                                             np.array(point_indices))
+
+    # Convert points to world coordinates
     points = np.einsum("ij,...j", intrinsic_matrix, points)
 
     filename = path + "Cloud.ply"
