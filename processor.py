@@ -350,9 +350,83 @@ def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.
     return x, (np.expand_dims(x_status, axis=1)[:, 0] == 1)
 
 
-# Video, camera and processing parameters in
-# 3D point cloud out
-# The main processing loop
+def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point_indices):
+    """
+    Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
+    frames link together
+
+    :param popped_tracks: The tracks that will not be updated again
+    :param poses: The poses of the frames so far
+    :param point_ID: The current 3D point identification number
+    :param points_2d: The 2D image points analysed so far
+    :param frame_indices: The index of the frame relating to each 2D point
+    :param point_indices: The index of the 3D point relating to each 2D point
+    :return: new 3D points,
+            new 3D point identification number,
+            new 2D point array
+            new frame index array
+            new 3D point index array
+    """
+    # Join together all the points and tracks for pairs of frames
+    frame_pairs = {}
+    for track in popped_tracks:
+        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
+        pair = [left, right]
+        identifier = str(frame_ID1) + "-" + str(frame_ID2)
+
+        if identifier in frame_pairs:
+            track_group, coordinates = frame_pairs.get(identifier)
+            track_group.append(track)
+            coordinates.append(pair)
+            frame_pairs[identifier] = (track_group, coordinates)
+        else:
+            track_group = [track]
+            coordinates = [pair]
+            frame_pairs[identifier] = (track_group, coordinates)
+
+    points = None
+    count = 0
+
+    # Triangulation
+    for identifier, (track_group, coordinates) in frame_pairs.items():
+        frames = identifier.split("-")
+        frame_ID1 = int(frames[0])
+        frame_ID2 = int(frames[1])
+
+        # Get poses
+        pose1 = poses[frame_ID1][:3, :]
+        pose2 = poses[frame_ID2][:3, :]
+
+        # Get coordinates
+        coordinates = np.array(coordinates)
+        left_points = coordinates[:, 0, :]
+        right_points = coordinates[:, 1, :]
+
+        # Triangulate points
+        new_points, used = triangulation(pose1, pose2, left_points, right_points)
+
+        # Manage bundling
+        track_group = np.array(track_group)
+        used_tracks = track_group[used]
+        for track, point in zip(used_tracks, new_points):
+            new_points_2d = track.get2DPoints()
+
+            for i, point_2d in enumerate(new_points_2d):
+                points_2d.append(point_2d)
+                frame_indices.append(frame_ID1 + i)
+                point_indices.append(point_ID)
+
+            point_ID += 1
+            count += 1
+
+        if points is None:
+            points = new_points
+        else:
+            points = np.concatenate((points, new_points))
+
+    return points, point_ID, points_2d, frame_indices, point_indices
+
+
 def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
@@ -449,58 +523,18 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                   keyframe_ID,
                                                   R_points)
 
-            # Join together all the points and tracks for pairs of frames
-            frame_pairs = {}
-            for track in popped_tracks:
-                frame_ID1, frame_ID2, left, right = track.getTriangulationData()
-                pair = [left, right]
-                identifier = str(frame_ID1) + "-" + str(frame_ID2)
+            # Manage the 3D points including triangulation and preparation for adjustment
+            new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
+                                                                                         poses,
+                                                                                         point_ID,
+                                                                                         points_2d,
+                                                                                         frame_indices,
+                                                                                         point_indices)
 
-                if identifier in frame_pairs:
-                    track_group, coordinates = frame_pairs.get(identifier)
-                    track_group.append(track)
-                    coordinates.append(pair)
-                    frame_pairs[identifier] = (track_group, coordinates)
-                else:
-                    track_group = [track]
-                    coordinates = [pair]
-                    frame_pairs[identifier] = (track_group, coordinates)
-
-            # Triangulation
-            for identifier, (track_group, coordinates) in frame_pairs.items():
-                frames = identifier.split("-")
-                frame_ID1 = int(frames[0])
-                frame_ID2 = int(frames[1])
-
-                # Get poses
-                pose1 = poses[frame_ID1][:3, :]
-                pose2 = poses[frame_ID2][:3, :]
-
-                # Get coordinates
-                coordinates = np.array(coordinates)
-                left_points = coordinates[:, 0, :]
-                right_points = coordinates[:, 1, :]
-
-                # Triangulate points
-                new_points, used = triangulation(pose1, pose2, left_points, right_points)
-
-                if points is None:
-                    points = new_points
-                else:
-                    points = np.concatenate((points, new_points))
-
-                # Manage bundling
-                track_group = np.array(track_group)
-                used_tracks = track_group[used]
-                for track, point in zip(used_tracks, new_points):
-                    new_points_2d = track.get2DPoints()
-
-                    for i, point_2d in enumerate(new_points_2d):
-                        points_2d.append(point_2d)
-                        frame_indices.append(frame_ID1 + i)
-                        point_indices.append(point_ID)
-
-                    point_ID += 1
+            if points is None:
+                points = new_points
+            else:
+                points = np.concatenate((points, new_points))
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
@@ -508,6 +542,17 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             keyframe_ID += 1
 
         success, frame = cap.read()
+
+    # Include the points in the tracks not popped at the end
+    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
+                                                                                 poses,
+                                                                                 point_ID,
+                                                                                 points_2d,
+                                                                                 frame_indices,
+                                                                                 point_indices)
+
+    points = np.concatenate((points, new_points))
+
     toc = time.time()
     print("Points found.")
     print(toc - tic, "seconds.\n")
