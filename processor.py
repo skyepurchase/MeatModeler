@@ -420,6 +420,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Initialise triangulation
     points = None
 
+    # Initialise bundling
+    points_2d = []
+    frame_indices = []
+    point_indices = []
+    point_ID = 0
+
     # Processing loop
     success, frame = cap.read()
 
@@ -457,25 +463,32 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                   keyframe_ID,
                                                   R_points)
 
-            # Join together all the points for pairs of frames
-            pairs = {}
+            # Join together all the points and tracks for pairs of frames
+            frame_pairs = {}
             for track in popped_tracks:
-                ID1, ID2, coordinates = track.getTriangulationData()
-                pair = [coordinates[0], coordinates[-1]]
-                identifier = str(ID1) + "-" + str(ID2)
+                frame_ID1, frame_ID2, left, right = track.getTriangulationData()
+                pair = [left, right]
+                identifier = str(frame_ID1) + "-" + str(frame_ID2)
 
-                if identifier in pairs:
-                    pairs[identifier].append(pair)
+                if identifier in frame_pairs:
+                    track_group, coordinates = frame_pairs.get(identifier)
+                    track_group.append(track)
+                    coordinates.append(pair)
+                    frame_pairs[identifier] = (track_group, coordinates)
                 else:
-                    pairs[identifier] = [pair]
+                    track_group = [track]
+                    coordinates = [pair]
+                    frame_pairs[identifier] = (track_group, coordinates)
 
             # Triangulation
-            for identifier, coordinates in pairs.items():
+            for identifier, (track_group, coordinates) in frame_pairs.items():
                 frames = identifier.split("-")
+                frame_ID1 = int(frames[0])
+                frame_ID2 = int(frames[1])
 
                 # Get poses
-                pose1 = poses[int(frames[0])][:3, :]
-                pose2 = poses[int(frames[1])][:3, :]
+                pose1 = poses[frame_ID1][:3, :]
+                pose2 = poses[frame_ID2][:3, :]
 
                 # Get coordinates
                 coordinates = np.array(coordinates)
@@ -489,6 +502,18 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                     points = new_points
                 else:
                     points = np.concatenate((points, new_points))
+
+                # Manage bundling
+                track_group = np.array(track_group)
+                used_tracks = track_group[used]
+                for track, point in zip(used_tracks, new_points):
+                    new_points_2d = track.get2DPoints()
+
+                    for i, point_2d in enumerate(new_points_2d):
+                        points_2d.append(point_2d)
+                        frame_indices.append(frame_ID1 + i)
+                        point_indices.append(point_ID)
+                        point_ID += 1
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
