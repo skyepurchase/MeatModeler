@@ -18,8 +18,12 @@ class Track:
 
     def getTriangulationData(self):
         return self.first_frame_ID, \
-               self.last_frame_ID,\
-               self.virtual_point_vector
+               self.last_frame_ID, \
+               self.virtual_point_vector[0], \
+               self.virtual_point_vector[-1]
+
+    def get2DPoints(self):
+        return self.virtual_point_vector
 
     def wasUpdated(self):
         return self.updated
