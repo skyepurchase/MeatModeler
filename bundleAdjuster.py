@@ -101,26 +101,6 @@ def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     return A
 
 
-def reshapeResults(result, camera_matrix, n_frames, n_points):
-    """
-    Converts the least squares result array into point and frame positions
-
-    :param result: Result from least squares
-    :param camera_matrix: intrinsic camera matrix
-    :param n_frames: The number of frames
-    :param n_points: The number of 3D points
-    :return: converted
-    """
-    points = result.x[n_frames * 6:].reshape((n_points, 3))
-    points = np.dot(camera_matrix, points.T).T
-
-    frame_parameters = result.x[:n_frames * 6].reshape((n_frames, 6))
-    frame_positions = frame_parameters[:, :3]
-    frame_positions = np.dot(camera_matrix, frame_positions.T).T
-
-    return points, frame_positions
-
-
 def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
@@ -176,4 +156,7 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
                               point_indices,
                               points_2D))
 
-    return reshapeResults(res, camera_matrix, len(frame_parameters), len(points_3D))
+    points = res.x[len(frame_parameters) * 6:].reshape((len(points_3D), 3))
+    points = np.dot(camera_matrix, points.T).T
+
+    return points

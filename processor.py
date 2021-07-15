@@ -559,7 +559,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     print("adjusting points...")
     tic = time.time()
-    points, frame_positions = bundleAdjuster.bundleAdjustment(np.array(transforms),
+    points = bundleAdjuster.bundleAdjustment(np.array(transforms),
                                                               intrinsic_matrix,
                                                               points,
                                                               np.array(points_2d),
