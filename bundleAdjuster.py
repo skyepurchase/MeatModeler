@@ -27,36 +27,37 @@ def rotate(points, rot_vecs):
     return cos_theta * points + sin_theta * np.cross(v, points) + dot * (1 - cos_theta) * v
 
 
-def project(points, frame_params):
+def project(points, frame_params, camera_matrix):
     """
     Takes an array of 3D points and corresponding camera parameters and returns the re-projected 2D points
 
     :param points: Array of 3D points
     :param frame_params: Array of frame parameters (rotation vectors, translation vectors, intrinsic properties)
+    :param camera_matrix: intrinsic camera matrix
     :return: Array of 2D projected points
     """
-    # Project and normalise points
+    # Rotate points
     points_proj = rotate(points, frame_params[:, :3])
-    points_proj += frame_params[:, 3:6]
-    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
 
-    # Remove artifacts from the camera
-    f = frame_params[:, 6]
-    k1 = frame_params[:, 7]
-    k2 = frame_params[:, 8]
-    n = np.sum(points_proj ** 2, axis=1)
-    r = 1 + k1 * n + k2 * n ** 2
-    points_proj *= (r * f)[:, np.newaxis]
+    # Translate points
+    points_proj += frame_params[:, 3:6]
+
+    # Convert to world coordinates
+    points_proj = np.einsum("ij,...j", camera_matrix, points_proj)
+
+    # Normalise points
+    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
 
     return points_proj
 
 
-def fun(parameters, n_frames, n_points, frame_indices, point_indices, points_2D):
+def fun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
     """
     Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
     the error
 
     :param parameters: Array of frame parameters followed by 3D points contiguously
+    :param camera_matrix: Camera intrinsic matrix
     :param n_frames: The number of frames
     :param n_points: The number of 3D points
     :param frame_indices: Array of frame indices to 2D point array
@@ -65,11 +66,11 @@ def fun(parameters, n_frames, n_points, frame_indices, point_indices, points_2D)
     :return: The difference between the 2D points and projected 3D points
     """
     # Retrieve data
-    frame_params = parameters[:n_frames * 9].reshape((n_frames, 9))
-    points_3D = parameters[n_frames * 9:].reshape((n_points, 3))
+    frame_params = parameters[:n_frames * 6].reshape((n_frames, 6))
+    points_3D = parameters[n_frames * 6:].reshape((n_points, 3))
 
     # Project points
-    points_proj = project(points_3D[point_indices], frame_params[frame_indices])
+    points_proj = project(points_3D[point_indices], frame_params[frame_indices], camera_matrix)
 
     return (points_proj - points_2D).ravel()
 
@@ -85,17 +86,17 @@ def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     :return: Sparse Jacobian matrix
     """
     m = frame_indices.size * 2
-    n = n_frames * 9 + n_points * 3
+    n = n_frames * 6 + n_points * 3
     A = lil_matrix((m, n), dtype=int)
 
     i = np.arange(frame_indices.size)
-    for s in range(9):
-        A[2 * i, frame_indices * 9 + s] = 1
-        A[2 * i + 1, frame_indices * 9 + s] = 1
+    for s in range(6):
+        A[2 * i, frame_indices * 6 + s] = 1
+        A[2 * i + 1, frame_indices * 6 + s] = 1
 
     for s in range(3):
-        A[2 * i, n_frames * 9 + point_indices * 3 + s] = 1
-        A[2 * i + 1, n_frames * 9 + point_indices * 3 + s] = 1
+        A[2 * i, n_frames * 6 + point_indices * 3 + s] = 1
+        A[2 * i + 1, n_frames * 6 + point_indices * 3 + s] = 1
 
     return A
 
@@ -104,7 +105,7 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
     """
     Takes all the projections for the found 3D points and improves the projections
 
-    :param frame_projections: The 4x3 frame projection matrices
+    :param frame_projections: The 4x3 frame projection matrices (not modified by the intrinsic matrix)
     :param camera_matrix: The intrinsic camera matrix
     :param points_3D: The triangulated 3D points
     :param points_2D: The corresponding 2D image coordinates
@@ -112,11 +113,10 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
     :param point_indices: The 3D point corresponding to each 2D point
     :return: New 3D points from improved projections
     """
+
     # Converting array of projection matrices into an array rotation vectors and translation vectors
     # Creating the transposed translation vector array
-    translation_vectors = np.hstack((np.expand_dims(frame_projections[:, 0, 3], axis=1),
-                                     np.expand_dims(frame_projections[:, 1, 3], axis=1),
-                                     np.expand_dims(frame_projections[:, 2, 3], axis=1)))
+    translation_vectors = frame_projections[:, :3, 3]
 
     # Finding the matrix of rotation Euler angles
     theta = np.arccos((frame_projections[:, 0, 0] + frame_projections[:, 1, 1] + frame_projections[:, 2, 2] - 1) / 2)
@@ -128,9 +128,7 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
         rotation_vectors_y = (frame_projections[:, 0, 2] - frame_projections[:, 2, 0]) / (2 * sin_theta)
         rotation_vectors_z = (frame_projections[:, 1, 0] - frame_projections[:, 0, 1]) / (2 * sin_theta)
 
-        rotation_vectors = np.hstack((np.expand_dims(rotation_vectors_x, axis=1),
-                                      np.expand_dims(rotation_vectors_y, axis=1),
-                                      np.expand_dims(rotation_vectors_z, axis=1)))
+        rotation_vectors = np.vstack((rotation_vectors_x, rotation_vectors_y, rotation_vectors_z)).T
 
         # Scaling the unit vectors by the size of the angle
         rotation_vectors = np.nan_to_num(rotation_vectors) * np.expand_dims(theta, axis=1)
@@ -138,15 +136,8 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
     # Matrix of the individual frame parameters
     frame_parameters = np.hstack((rotation_vectors, translation_vectors))
 
-    # Adding camera focal length
-    focal_length_vector = np.repeat((camera_matrix[0, 0] + camera_matrix[1, 1]) / 2, len(frame_parameters))
-    frame_parameters = np.hstack((frame_parameters, np.expand_dims(focal_length_vector, axis=1)))
-
-    # Adding distortion (as images are undistorted these are just 1)
-    frame_parameters = np.hstack((frame_parameters, np.ones((len(frame_parameters), 2))))
-
     # Concatenating frame parameters and 3D points
-    parameters = np.hstack((frame_parameters.reshape((len(frame_parameters)*9,)),
+    parameters = np.hstack((frame_parameters.reshape((len(frame_parameters)*6,)),
                             points_3D.reshape((len(points_3D)*3,))))
 
     # Applying least squares to find the optimal projections and hence 3D points
@@ -158,6 +149,11 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
                         x_scale='jac',
                         ftol=1e-4,
                         method='trf',
-                        args=(len(frame_parameters), len(points_3D), frame_indices, point_indices, points_2D))
+                        args=(camera_matrix,
+                              len(frame_parameters),
+                              len(points_3D),
+                              frame_indices,
+                              point_indices,
+                              points_2D))
 
     return res.x[len(frame_parameters) * 9:].reshape((len(points_3D), 3))
