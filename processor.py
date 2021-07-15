@@ -1,4 +1,5 @@
 import cv2
+import time
 import numpy as np
 import pandas as pd
 from pyntcloud import PyntCloud
@@ -389,6 +390,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     :param flann_params: FLANN feature matching parameters
     :return: A 3D point cloud
     """
+    print("Initialising...")
+    tic = time.time()
     orb = cv2.ORB_create(nfeatures=20000)
 
     cap = cv2.VideoCapture(video)
@@ -426,7 +429,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     frame_indices = []
     point_indices = []
     point_ID = 0
+    toc = time.time()
+    print("Initialisation complete.")
+    print(toc - tic, "seconds.\n")
 
+    print("Finding points...")
+    tic = time.time()
     # Processing loop
     success, frame = cap.read()
 
@@ -524,13 +532,21 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             keyframe_ID += 1
 
         success, frame = cap.read()
+    toc = time.time()
+    print("Points found.")
+    print(toc - tic, "seconds.\n")
 
-    points = bundleAdjuster.bundleAdjustment(np.array(transforms),
-                                             intrinsic_matrix,
-                                             points,
-                                             np.array(points_2d),
-                                             np.array(frame_indices),
-                                             np.array(point_indices))
+    print("adjusting points...")
+    tic = time.time()
+    points, frame_positions = bundleAdjuster.bundleAdjustment(np.array(transforms),
+                                                              intrinsic_matrix,
+                                                              points,
+                                                              np.array(points_2d),
+                                                              np.array(frame_indices),
+                                                              np.array(point_indices))
+    toc = time.time()
+    print("adjustment complete.")
+    print(toc - tic, "seconds.\n")
 
     # Convert points to world coordinates
     points = np.einsum("ij,...j", intrinsic_matrix, points)
