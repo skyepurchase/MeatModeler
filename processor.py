@@ -370,7 +370,7 @@ def triangulation(first_pose, last_pose, left_points, right_points, tolerance=3.
     x = x[:, :3] / x[:, -1][:, None]
     x = x[np.expand_dims(x_status, axis=1)[:, 0] == 1]
 
-    return x
+    return x, (np.expand_dims(x_status, axis=1)[:, 0] == 1)
 
 
 # Video, camera and processing parameters in
@@ -483,7 +483,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 right_points = coordinates[:, 1, :]
 
                 # Triangulate points
-                new_points = triangulation(pose1, pose2, left_points, right_points)
+                new_points, used = triangulation(pose1, pose2, left_points, right_points)
 
                 if points is None:
                     points = new_points
