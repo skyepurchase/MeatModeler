@@ -6,3 +6,6 @@ numpy~=1.19.5
 pandas~=1.2.2
 pyntcloud~=0.1.4
 scipy~=1.6.0
+pandas~=1.2.2
+pyntcloud~=0.1.4
+scipy~=1.6.0
