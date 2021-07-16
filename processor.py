@@ -562,11 +562,11 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     print("adjusting points...")
     tic = time.time()
     points = bundleAdjuster.bundleAdjustment(np.array(transforms),
-                                                              intrinsic_matrix,
-                                                              points,
-                                                              np.array(points_2d),
-                                                              np.array(frame_indices),
-                                                              np.array(point_indices))
+                                             intrinsic_matrix,
+                                             points,
+                                             np.array(points_2d),
+                                             np.array(frame_indices),
+                                             np.array(point_indices))
     toc = time.time()
     print("adjustment complete.")
     print(toc - tic, "seconds.\n")
