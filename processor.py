@@ -30,7 +30,7 @@ def calibrate(images, corner_dims=(7, 7)):
     """
     Takes specific chess board images and calibrates the camera appropriately
 
-    :param images: A list of different images of a known chessboard
+    :param images: A list of different openCV image objects of a known chessboard
     :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
     :return: The intrinsic property matrix,
             The distortion coefficients
@@ -44,8 +44,7 @@ def calibrate(images, corner_dims=(7, 7)):
     obj_points = []
     img_points = []
 
-    for filename in images:
-        img = cv2.imread(filename)
+    for img in images:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Find the chessboard corners
@@ -56,7 +55,7 @@ def calibrate(images, corner_dims=(7, 7)):
             obj_points.append(objp)
             img_points.append(corners)
 
-    img = cv2.imread(images[0])
+    img = images[0]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     success, matrix, distortion, _, _ = cv2.calibrateCamera(obj_points,
