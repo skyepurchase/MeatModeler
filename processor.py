@@ -26,6 +26,51 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
+def videoCalibrate(video, feature_params, lk_params, corner_dims=(7, 7)):
+    """
+    Takes a video input of a chessboard pattern and returns the calibration parameters of the camera
+
+    :param video: 360* video of chessboard pattern
+    :param feature_params: Parameters for openCV goodFeaturesToTrack
+    :param lk_params: Parameters for keyFrameTracking function
+    :param corner_dims: The dimension of chessboard corners
+    :return: intrinsic camera matrix,
+            distortion coefficients
+    """
+    images = []
+
+    # Retrieve first frame
+    _, start_frame = video.read()
+
+    # Initialise keyframe tracking
+    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+    prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
+                                                mask=None,
+                                                **feature_params)
+    accumulative_error = 0
+
+    # Processing loop
+    success, frame = video.read()
+
+    while success:
+        frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+
+        success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
+                                                                                           prev_frame_grey,
+                                                                                           prev_frame_points,
+                                                                                           accumulative_error,
+                                                                                           lk_params,
+                                                                                           feature_params,
+                                                                                           threshold=0.2)
+
+        if success:
+            images.append(frame)
+
+        success, frame = video.read()
+
+    return calibrate(images, corner_dims)
+
+
 def calibrate(images, corner_dims=(7, 7)):
     """
     Takes specific chess board images and calibrates the camera appropriately
