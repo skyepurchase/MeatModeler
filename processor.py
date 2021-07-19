@@ -489,6 +489,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     """
     print("Initialising...")
     tic = time.time()
+
     orb = cv2.ORB_create(nfeatures=20000)
 
     cap = cv2.VideoCapture(video)
@@ -526,12 +527,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     frame_indices = []
     point_indices = []
     point_ID = 0
+
     toc = time.time()
     print("Initialisation complete.")
     print(toc - tic, "seconds.\n")
 
     print("Finding points...")
     tic = time.time()
+
     # Processing loop
     success, frame = cap.read()
 
@@ -601,7 +604,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     points = np.concatenate((points, new_points))
 
     toc = time.time()
-    print("Points found.")
+    print(len(points), "points found.")
     print(toc - tic, "seconds.\n")
 
     print("adjusting points...")
