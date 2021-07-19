@@ -55,7 +55,7 @@ def videoCalibrate(video, feature_params, lk_params, corner_dims=(7, 7)):
     while success:
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
-        success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
+        is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
                                                                                            prev_frame_grey,
                                                                                            prev_frame_points,
                                                                                            accumulative_error,
@@ -63,7 +63,7 @@ def videoCalibrate(video, feature_params, lk_params, corner_dims=(7, 7)):
                                                                                            feature_params,
                                                                                            threshold=0.2)
 
-        if success:
+        if is_keyframe:
             images.append(frame)
 
         success, frame = video.read()
