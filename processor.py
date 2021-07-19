@@ -583,7 +583,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             if points is None:
                 points = new_points
-            else:
+            elif new_points is not None:
                 points = np.concatenate((points, new_points))
 
             # Update variables
@@ -601,7 +601,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                  frame_indices,
                                                                                  point_indices)
 
-    points = np.concatenate((points, new_points))
+    if new_points is not None:
+        points = np.concatenate((points, new_points))
 
     toc = time.time()
     print(len(points), "points found.")
