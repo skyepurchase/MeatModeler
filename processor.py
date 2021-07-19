@@ -193,7 +193,7 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
     return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params):
+def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params, threshold=0.75):
     """
     Finds which features in two keyframes match
 
@@ -202,6 +202,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     :param prev_orb_descriptors: The previous keyframe feature descriptors
     :param orb: An ORB feature detection object
     :param flann_params: Parameters to tune FLANN matcher
+    :param threshold: Ratio threshold for FLANN matches
     :return: List of left frame matched Keypoints,
             List of right frame matched Keypoints,
             The new previous keyframe feature points,
@@ -216,7 +217,7 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
 
     # Find which points can be considered new
     good_matches = [match[0] for match in matches if
-                    len(match) == 2 and match[0].distance < 0.8 * match[1].distance]
+                    len(match) == 2 and match[0].distance < threshold * match[1].distance]
 
     left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
     right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
