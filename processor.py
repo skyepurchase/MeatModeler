@@ -551,11 +551,11 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
         is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
-                                                                                           prev_frame_grey,
-                                                                                           prev_frame_points,
-                                                                                           accumulative_error,
-                                                                                           lk_params,
-                                                                                           feature_params)
+                                                                                               prev_frame_grey,
+                                                                                               prev_frame_points,
+                                                                                               accumulative_error,
+                                                                                               lk_params,
+                                                                                               feature_params)
 
         if is_keyframe:
             # Calculate matches
