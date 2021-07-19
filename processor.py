@@ -460,7 +460,15 @@ def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point
 
             for i, point_2d in enumerate(new_points_2d):
                 points_2d.append(point_2d)
-                frame_indices.append(frame_ID1 + i)
+
+                if i == len(new_points_2d) - 1:
+                    # The last index must be frame_ID2 index
+                    # This is a problem for comparing the last frame to the first
+                    # As the first frame is 0 which cannot be reached with addition
+                    frame_indices.append(frame_ID2)
+                else:
+                    frame_indices.append(frame_ID1 + i)
+
                 point_indices.append(point_ID)
 
             point_ID += 1
