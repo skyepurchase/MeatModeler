@@ -144,7 +144,7 @@ def undistortFrame(frame, camera_matrix, distortion_coefficients):
 
 
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
-                     threshold=0.1):
+                     threshold=0.2):
     """
     Determines whether a given frame is a keyframe for further analysis
 
