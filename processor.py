@@ -61,7 +61,7 @@ def videoCalibrate(video, feature_params, lk_params, corner_dims=(7, 7)):
                                                                                                accumulative_error,
                                                                                                lk_params,
                                                                                                feature_params,
-                                                                                               threshold=0.2)
+                                                                                               threshold=0.1)
 
         if is_keyframe:
             images.append(frame)
@@ -555,7 +555,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                                prev_frame_points,
                                                                                                accumulative_error,
                                                                                                lk_params,
-                                                                                               feature_params)
+                                                                                               feature_params,
+                                                                                               threshold=0.1)
 
         if is_keyframe:
             # Calculate matches
