@@ -602,8 +602,33 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         success, frame = cap.read()
 
+    # Comparing last frame to first frame
+    start_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+
+    # Calculate matches
+    L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(start_frame_grey,
+                                                                                  prev_orb_points,
+                                                                                  prev_orb_descriptors,
+                                                                                  orb,
+                                                                                  flann_params)
+
+    # Pose estimation
+    L_points, R_points, origin_to_origin_error, _ = poseEstimation(L_matches,
+                                                                   R_matches,
+                                                                   origin_to_left,
+                                                                   intrinsic_matrix)
+
+    # Manage tracks
+    popped_tracks, tracks = pointTracking(tracks,
+                                          prev_keyframe_ID,
+                                          L_points,
+                                          0,
+                                          R_points)
+
+    final_tracks = tracks + popped_tracks
+
     # Include the points in the tracks not popped at the end
-    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
+    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(final_tracks,
                                                                                  poses,
                                                                                  point_ID,
                                                                                  points_2d,
