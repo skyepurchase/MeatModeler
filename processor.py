@@ -542,14 +542,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
-        success, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
+        is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
                                                                                            prev_frame_grey,
                                                                                            prev_frame_points,
                                                                                            accumulative_error,
                                                                                            lk_params,
                                                                                            feature_params)
 
-        if success:
+        if is_keyframe:
             # Calculate matches
             L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
                                                                                           prev_orb_points,
