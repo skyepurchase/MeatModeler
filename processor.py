@@ -134,7 +134,6 @@ def intrinsicFromEXIF(image):
             exif_info = img._getexif()
             if exif_info is not None:
                 for tag, value in exif_info.items():
-                    print(ExifTags.TAGS.get(tag, tag), value)
                     tags[ExifTags.TAGS.get(tag, tag)] = value
 
     # Extract focal length
