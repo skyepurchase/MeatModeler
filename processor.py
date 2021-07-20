@@ -501,6 +501,7 @@ def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point
 
         # Triangulate points
         new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
+        new_points = new_points[:, :3] / new_points[:, 3][:, None]
 
         # Manage bundling
         for track, point in zip(track_group, new_points):
