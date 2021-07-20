@@ -297,7 +297,7 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera
     # Use the essential matrix and inliers to find the pose and new inliers
     _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_left_to_right,
                                                                    right_frame_points,
-                                                                   left_frame_points,  # Potentially swap
+                                                                   left_frame_points,
                                                                    camera_matrix,
                                                                    mask=mask_E)
 
