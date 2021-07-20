@@ -500,12 +500,10 @@ def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point
         right_points = coordinates[:, 1, :]
 
         # Triangulate points
-        new_points, used = triangulation(pose1, pose2, left_points, right_points)
+        new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
 
         # Manage bundling
-        track_group = np.array(track_group)
-        used_tracks = track_group[used]
-        for track, point in zip(used_tracks, new_points):
+        for track, point in zip(track_group, new_points):
             new_points_2d = track.get2DPoints()
 
             for i, point_2d in enumerate(new_points_2d):
