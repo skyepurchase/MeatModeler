@@ -503,11 +503,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise point tracking
     tracks = []
+    popped_tracks = []
     prev_keyframe_ID = 0
     keyframe_ID = 1
-
-    # Initialise triangulation
-    points = None
 
     # Initialise bundling
     points_2d = []
@@ -577,24 +575,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 transforms.append(origin_to_right)
 
             # Manage tracks
-            popped_tracks, tracks = pointTracking(tracks,
-                                                  prev_keyframe_ID,
-                                                  L_points,
-                                                  keyframe_ID,
-                                                  R_points)
-
-            # Manage the 3D points including triangulation and preparation for adjustment
-            new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
-                                                                                         poses,
-                                                                                         point_ID,
-                                                                                         points_2d,
-                                                                                         frame_indices,
-                                                                                         point_indices)
-
-            if points is None:
-                points = new_points
-            elif new_points is not None:
-                points = np.concatenate((points, new_points))
+            new_popped_tracks, tracks = pointTracking(tracks,
+                                                      prev_keyframe_ID,
+                                                      L_points,
+                                                      keyframe_ID,
+                                                      R_points)
+            popped_tracks += new_popped_tracks
 
             # Update variables
             origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
@@ -607,16 +593,16 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         if has_joined:
             success = False
 
-    # Include the points in the tracks not popped at the end
-    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
-                                                                                 poses,
-                                                                                 point_ID,
-                                                                                 points_2d,
-                                                                                 frame_indices,
-                                                                                 point_indices)
+    # Add the remaining tracks which are implicitly popped
+    popped_tracks += tracks
 
-    if new_points is not None:
-        points = np.concatenate((points, new_points))
+    # Include the points in the tracks not popped at the end
+    points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
+                                                                             poses,
+                                                                             point_ID,
+                                                                             points_2d,
+                                                                             frame_indices,
+                                                                             point_indices)
 
     toc = time.time()
     print(len(points), "points found.")
