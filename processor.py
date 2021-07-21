@@ -226,7 +226,8 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
 
         # If possible increase the accumulative error between frames
         if err is not None:
-            new_err = np.nan_to_num(err)
+            new_err = np.nan_to_num(err)  # If a feature wasn't trackable error is NaN
+            new_err[new_err < 0] = 0  # Unknown but can result in very large negative numbers
             accumulated_error += np.average(new_err)
 
         # Current frame has deviated enough to be considered a key frame
