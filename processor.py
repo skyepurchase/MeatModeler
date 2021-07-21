@@ -572,9 +572,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             if has_joined:
                 origin_to_origin_error = origin_to_right  # The origin to right should return to origin
-
-            poses.append(pose)
-            transforms.append(origin_to_right)
+            else:
+                poses.append(pose)  # Do not add origin twice
+                transforms.append(origin_to_right)
 
             # Manage tracks
             popped_tracks, tracks = pointTracking(tracks,
