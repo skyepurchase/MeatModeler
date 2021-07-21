@@ -120,7 +120,37 @@ def reformatResult(result, n_frames, n_points):
     return points, positions
 
 
-def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, frame_indices, point_indices):
+def frameParameters(frame_projections):
+    """
+    Converts 4x4 frame projection matrices into 2 contiguous row vectors using Euler-Rodrigues rotation vectors
+
+    :param frame_projections: An array of 4x4 projection matrices
+    :return: An array of rotation and translation vectors
+    """
+    # Converting array of projection matrices into an array rotation vectors and translation vectors
+    # Creating the transposed translation vector array
+    translation_vectors = frame_projections[:, :3, 3]
+
+    # Finding the matrix of rotation Euler angles
+    theta = np.arccos((frame_projections[:, 0, 0] + frame_projections[:, 1, 1] + frame_projections[:, 2, 2] - 1) / 2)
+    sin_theta = np.sin(theta)
+
+    # Finding the matrix of transposed unit vectors of rotation
+    with np.errstate(invalid='ignore'):
+        rotation_vectors_x = (frame_projections[:, 2, 1] - frame_projections[:, 1, 2]) / (2 * sin_theta)
+        rotation_vectors_y = (frame_projections[:, 0, 2] - frame_projections[:, 2, 0]) / (2 * sin_theta)
+        rotation_vectors_z = (frame_projections[:, 1, 0] - frame_projections[:, 0, 1]) / (2 * sin_theta)
+
+        rotation_vectors = np.vstack((rotation_vectors_x, rotation_vectors_y, rotation_vectors_z)).T
+
+        # Scaling the unit vectors by the size of the angle
+        rotation_vectors = np.nan_to_num(rotation_vectors) * np.expand_dims(theta, axis=1)
+
+    # Matrix of the individual frame parameters
+    return np.hstack((rotation_vectors, translation_vectors))
+
+
+def adjustPoints(frame_projections, camera_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
 
