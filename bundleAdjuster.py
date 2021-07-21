@@ -115,7 +115,7 @@ def reformatResult(result, n_frames, n_points):
 
     # Rotation then translation takes camera position to origin
     # Reverse translation then reverse rotation takes origin to camera
-    positions = np.einsum("...i,...i", inv_rot, translations)
+    positions = rotate(translations, inv_rot)
 
     return points, positions
 
