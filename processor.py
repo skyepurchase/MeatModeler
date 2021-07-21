@@ -570,6 +570,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                        origin_to_left,
                                                                        intrinsic_matrix)
 
+            if has_joined:
+                origin_to_origin_error = origin_to_right  # The origin to right should return to origin
+
             poses.append(pose)
             transforms.append(origin_to_right)
 
