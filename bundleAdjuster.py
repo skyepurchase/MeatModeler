@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
 
@@ -101,6 +102,24 @@ def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     return A
 
 
+def reformatResult(result, n_frames, n_points):
+    points = result.x[n_frames * 6:].reshape((n_points, 3))
+
+    # Pose matrix transforms world coordinates to camera coordinates
+    poses = result.x[:n_frames * 6].reshape((n_frames, 6))
+    rotations = poses[:, :3]
+
+    # Inverse of rotation is just negative angle
+    inv_rot = -rotations
+    translations = -poses[:, 3:]
+
+    # Rotation then translation takes camera position to origin
+    # Reverse translation then reverse rotation takes origin to camera
+    positions = np.einsum("...i,...i", inv_rot, translations)
+
+    return points, positions
+
+
 def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
@@ -156,7 +175,4 @@ def bundleAdjustment(frame_projections, camera_matrix, points_3D, points_2D, fra
                               point_indices,
                               points_2D))
 
-    points = res.x[len(frame_parameters) * 6:].reshape((len(points_3D), 3))
-    points = np.dot(camera_matrix, points.T).T
-
-    return points
+    return reformatResult(res, len(frame_parameters), len(points_3D))
