@@ -526,6 +526,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     success, frame = cap.read()
 
     while success:
+        # Whether the start frame is rejoined
+        has_joined = False
+
         frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
@@ -544,6 +547,22 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           prev_orb_descriptors,
                                                                                           orb,
                                                                                           flann_params)
+
+            start_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+
+            # Calculate similarity
+            start_L_matches, start_R_matches, features, _ = featureTracking(start_frame_grey,
+                                                                            prev_orb_points,
+                                                                            prev_orb_descriptors,
+                                                                            orb,
+                                                                            flann_params)
+
+            # If there is a greater similarity to the start frame than to the previous frame the loop has closed
+            if (len(start_L_matches) / len(features)) >= (len(L_matches) / len(prev_orb_points)) and keyframe_ID > 1:
+                L_matches = start_L_matches
+                R_matches = start_R_matches
+                keyframe_ID = 0
+                has_joined = True
 
             # Pose estimation
             L_points, R_points, origin_to_right, pose = poseEstimation(L_matches,
@@ -581,33 +600,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         success, frame = cap.read()
 
-    # Comparing last frame to first frame
-    start_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
-
-    # Calculate matches
-    L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(start_frame_grey,
-                                                                                  prev_orb_points,
-                                                                                  prev_orb_descriptors,
-                                                                                  orb,
-                                                                                  flann_params)
-
-    # Pose estimation
-    L_points, R_points, origin_to_origin_error, _ = poseEstimation(L_matches,
-                                                                   R_matches,
-                                                                   origin_to_left,
-                                                                   intrinsic_matrix)
-
-    # Manage tracks
-    popped_tracks, tracks = pointTracking(tracks,
-                                          prev_keyframe_ID,
-                                          L_points,
-                                          0,
-                                          R_points)
-
-    final_tracks = tracks + popped_tracks
+        # If loop has occurred don't keep processing
+        if has_joined:
+            success = False
 
     # Include the points in the tracks not popped at the end
-    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(final_tracks,
+    new_points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
                                                                                  poses,
                                                                                  point_ID,
                                                                                  points_2d,
