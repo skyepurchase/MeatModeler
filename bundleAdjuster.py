@@ -52,7 +52,7 @@ def project(points, frame_params, camera_matrix):
     return points_proj
 
 
-def fun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
+def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
     """
     Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
     the error
@@ -170,7 +170,7 @@ def adjustPoints(frame_projections, camera_matrix, points_3D, points_2D, frame_i
 
     # Applying least squares to find the optimal projections and hence 3D points
     A = bundleAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
-    res = least_squares(fun,
+    res = least_squares(pointFun,
                         parameters,
                         jac_sparsity=A,
                         verbose=2,
