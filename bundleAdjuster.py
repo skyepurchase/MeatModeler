@@ -52,30 +52,6 @@ def project(points, frame_params, camera_matrix):
     return points_proj
 
 
-def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
-    """
-    Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
-    the error
-
-    :param parameters: Array of frame parameters followed by 3D points contiguously
-    :param camera_matrix: Camera intrinsic matrix
-    :param n_frames: The number of frames
-    :param n_points: The number of 3D points
-    :param frame_indices: Array of frame indices to 2D point array
-    :param point_indices: Array of 3D point indices to 2D point array
-    :param points_2D: Array of corresponding 2D image points
-    :return: The difference between the 2D points and projected 3D points
-    """
-    # Retrieve data
-    frame_params = parameters[:n_frames * 6].reshape((n_frames, 6))
-    points_3D = parameters[n_frames * 6:].reshape((n_points, 3))
-
-    # Project points
-    points_proj = project(points_3D[point_indices], frame_params[frame_indices], camera_matrix)
-
-    return (points_proj - points_2D).ravel()
-
-
 def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     """
     Creates a sparse Jacobian for the least squares regression
@@ -102,6 +78,30 @@ def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     return A
 
 
+def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
+    """
+    Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
+    the error
+
+    :param parameters: Array of frame parameters followed by 3D points contiguously
+    :param camera_matrix: Camera intrinsic matrix
+    :param n_frames: The number of frames
+    :param n_points: The number of 3D points
+    :param frame_indices: Array of frame indices to 2D point array
+    :param point_indices: Array of 3D point indices to 2D point array
+    :param points_2D: Array of corresponding 2D image points
+    :return: The difference between the 2D points and projected 3D points
+    """
+    # Retrieve data
+    frame_params = parameters[:n_frames * 6].reshape((n_frames, 6))
+    points_3D = parameters[n_frames * 6:].reshape((n_points, 3))
+
+    # Project points
+    points_proj = project(points_3D[point_indices], frame_params[frame_indices], camera_matrix)
+
+    return (points_proj - points_2D).ravel()
+
+
 def findPositions(parameters, n_frames):
     """
     Calculates the positions of the cameras based on their extrinsic matrices
@@ -117,19 +117,12 @@ def findPositions(parameters, n_frames):
     return positions
 
 
-def reformatResult(result, n_frames, n_points):
-    """
-    Converts the new calculated points, camera rotations and translations into usable arrays
-
-    :param result: Least squares regression result
-    :param n_frames: The number of frames
-    :param n_points: The number of points
-    :return: a 3D cartesian point array,
-            a 3D cartesian frame position array
-    """
-    points = result.x[n_frames * 6:].reshape((n_points, 3))
-    positions = findPositions(result.x[:n_frames * 6], n_frames)
-    return points, positions
+def poseFun(parameters, n_frames):
+    positions = findPositions(parameters, n_frames)
+    next_positions = np.roll(positions, -1, axis=0)
+    distance = np.linalg.norm(next_positions - positions, axis=1).reshape((n_frames, 1))
+    cost = distance - 1
+    return cost.ravel()
 
 
 def frameParameters(frame_extrinsic_matrices):
@@ -161,7 +154,22 @@ def frameParameters(frame_extrinsic_matrices):
         rotation_vectors = np.nan_to_num(rotation_vectors) * np.expand_dims(theta, axis=1)
 
     # Matrix of the individual frame parameters
-    return np.hstack((rotation_vectors, translation_vectors))
+    return np.hstack((rotation_vectors, translation_vectors)).reshape((len(frame_extrinsic_matrices) * 6,))
+
+
+def reformatResult(result, n_frames, n_points):
+    """
+    Converts the new calculated points, camera rotations and translations into usable arrays
+
+    :param result: Least squares regression result
+    :param n_frames: The number of frames
+    :param n_points: The number of points
+    :return: a 3D cartesian point array,
+            a 3D cartesian frame position array
+    """
+    points = result.x[n_frames * 6:].reshape((n_points, 3))
+    positions = findPositions(result.x[:n_frames * 6], n_frames)
+    return points, positions
 
 
 def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
@@ -179,8 +187,8 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
     frame_parameters = frameParameters(frame_extrinsic_matrices)
 
     # Concatenating frame parameters and 3D points
-    parameters = np.hstack((frame_parameters.reshape((len(frame_parameters)*6,)),
-                            points_3D.reshape((len(points_3D)*3,))))
+    parameters = np.hstack((frame_parameters,
+                           points_3D.reshape((len(points_3D) * 3,))))
 
     # Applying least squares to find the optimal projections and hence 3D points
     A = bundleAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
