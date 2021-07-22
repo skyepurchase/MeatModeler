@@ -110,9 +110,9 @@ def findPositions(parameters, n_frames):
     :param n_frames: The number of frames present in the parameters
     :return: An array of 3D cartesian positions (n_frames, 3)
     """
-    transformations = parameters.reshape((n_frames, 6))
-    inv_rotations = -transformations[:, :3]
-    translations = -transformations[:, 3:]
+    extrinsic_parameters = parameters.reshape((n_frames, 6))
+    inv_rotations = -extrinsic_parameters[:, :3]
+    translations = -extrinsic_parameters[:, 3:]
     positions = rotate(translations, inv_rotations)
     return positions
 
@@ -132,26 +132,28 @@ def reformatResult(result, n_frames, n_points):
     return points, positions
 
 
-def frameParameters(frame_projections):
+def frameParameters(frame_extrinsic_matrices):
     """
-    Converts 4x4 frame projection matrices into 2 contiguous row vectors using Euler-Rodrigues rotation vectors
+    Converts 4x4 extrinsic matrices into 2 contiguous row vectors using Euler-Rodrigues rotation vectors
 
-    :param frame_projections: An array of 4x4 projection matrices
+    :param frame_extrinsic_matrices: An array of 4x4 extrinsic matrices fro each frame
     :return: An array of rotation and translation vectors
     """
     # Converting array of projection matrices into an array rotation vectors and translation vectors
     # Creating the transposed translation vector array
-    translation_vectors = frame_projections[:, :3, 3]
+    translation_vectors = frame_extrinsic_matrices[:, :3, 3]
 
     # Finding the matrix of rotation Euler angles
-    theta = np.arccos((frame_projections[:, 0, 0] + frame_projections[:, 1, 1] + frame_projections[:, 2, 2] - 1) / 2)
+    theta = np.arccos((frame_extrinsic_matrices[:, 0, 0] +
+                       frame_extrinsic_matrices[:, 1, 1] +
+                       frame_extrinsic_matrices[:, 2, 2] - 1) / 2)
     sin_theta = np.sin(theta)
 
     # Finding the matrix of transposed unit vectors of rotation
     with np.errstate(invalid='ignore'):
-        rotation_vectors_x = (frame_projections[:, 2, 1] - frame_projections[:, 1, 2]) / (2 * sin_theta)
-        rotation_vectors_y = (frame_projections[:, 0, 2] - frame_projections[:, 2, 0]) / (2 * sin_theta)
-        rotation_vectors_z = (frame_projections[:, 1, 0] - frame_projections[:, 0, 1]) / (2 * sin_theta)
+        rotation_vectors_x = (frame_extrinsic_matrices[:, 2, 1] - frame_extrinsic_matrices[:, 1, 2]) / (2 * sin_theta)
+        rotation_vectors_y = (frame_extrinsic_matrices[:, 0, 2] - frame_extrinsic_matrices[:, 2, 0]) / (2 * sin_theta)
+        rotation_vectors_z = (frame_extrinsic_matrices[:, 1, 0] - frame_extrinsic_matrices[:, 0, 1]) / (2 * sin_theta)
 
         rotation_vectors = np.vstack((rotation_vectors_x, rotation_vectors_y, rotation_vectors_z)).T
 
@@ -162,19 +164,19 @@ def frameParameters(frame_projections):
     return np.hstack((rotation_vectors, translation_vectors))
 
 
-def adjustPoints(frame_projections, camera_matrix, points_3D, points_2D, frame_indices, point_indices):
+def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
 
-    :param frame_projections: The 4x3 frame projection matrices (not modified by the intrinsic matrix)
-    :param camera_matrix: The intrinsic camera matrix
+    :param frame_extrinsic_matrices: The 4x4 extrinsic matrices for each frame
+    :param camera_intrinsic_matrix: The intrinsic camera matrix
     :param points_3D: The triangulated 3D points
     :param points_2D: The corresponding 2D image coordinates
     :param frame_indices: The frame corresponding to each 2D point
     :param point_indices: The 3D point corresponding to each 2D point
     :return: New 3D points from improved projections
     """
-    frame_parameters = frameParameters(frame_projections)
+    frame_parameters = frameParameters(frame_extrinsic_matrices)
 
     # Concatenating frame parameters and 3D points
     parameters = np.hstack((frame_parameters.reshape((len(frame_parameters)*6,)),
@@ -189,7 +191,7 @@ def adjustPoints(frame_projections, camera_matrix, points_3D, points_2D, frame_i
                         x_scale='jac',
                         ftol=1e-4,
                         method='trf',
-                        args=(camera_matrix,
+                        args=(camera_intrinsic_matrix,
                               len(frame_parameters),
                               len(points_3D),
                               frame_indices,

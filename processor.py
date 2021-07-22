@@ -276,15 +276,15 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return left_matches, right_matches, new_points, new_descriptors
 
 
-def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera_matrix):
+def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_matrix, camera_intrinsic_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
 
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
-    :param origin_to_left: 4x4 matrix converting origin coordinates to left frame coordinates
-    :param camera_matrix: The intrinsic matrix of the camera
+    :param left_frame_extrinsic_matrix: 4x4 matrix converting origin coordinates to left frame coordinates
+    :param camera_intrinsic_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
             The corresponding 3D points,
@@ -303,22 +303,22 @@ def poseEstimation(left_frame_points, right_frame_points, origin_to_left, camera
                                                                    mask=mask_E)
 
     # Create the 4x3 pose matrix from rotation and translation
-    transform_left_to_right = np.hstack([R_left_to_right, t_left_to_right])
+    left_to_right_extrinsic_matrix = np.hstack([R_left_to_right, t_left_to_right])
 
     # Convert to homogeneous 4x4 transformation matrix
-    transform_left_to_right = np.vstack((transform_left_to_right, np.array([0, 0, 0, 1])))
+    left_to_right_extrinsic_matrix = np.vstack((left_to_right_extrinsic_matrix, np.array([0, 0, 0, 1])))
 
     # Take world coordinates to left frame then to right frame
-    transform_origin_to_right = np.matmul(transform_left_to_right, origin_to_left)
+    right_frame_extrinsic_matrix = np.matmul(left_to_right_extrinsic_matrix, left_frame_extrinsic_matrix)
 
     # The real world pose
-    pose = np.dot(camera_matrix, transform_origin_to_right[:3])
+    projection_matrix = np.dot(camera_intrinsic_matrix, right_frame_extrinsic_matrix[:3])
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, transform_origin_to_right, pose
+    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, projection_matrix
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -377,13 +377,13 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point_indices):
+def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
 
     :param popped_tracks: The tracks that will not be updated again
-    :param poses: The poses of the frames so far
+    :param projections: The poses of the frames so far
     :param point_ID: The current 3D point identification number
     :param points_2d: The 2D image points analysed so far
     :param frame_indices: The index of the frame relating to each 2D point
@@ -421,8 +421,8 @@ def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point
         frame_ID2 = int(frames[1])
 
         # Get poses
-        pose1 = poses[frame_ID1][:3, :]
-        pose2 = poses[frame_ID2][:3, :]
+        projection1 = projections[frame_ID1][:3, :]
+        projection2 = projections[frame_ID2][:3, :]
 
         # Get coordinates
         coordinates = np.array(coordinates)
@@ -430,7 +430,7 @@ def managePoints(popped_tracks, poses, point_ID, points_2d, frame_indices, point
         right_points = coordinates[:, 1, :]
 
         # Triangulate points
-        new_points = cv2.triangulatePoints(pose1, pose2, left_points.T, right_points.T).T
+        new_points = cv2.triangulatePoints(projection1, projection2, left_points.T, right_points.T).T
         new_points = new_points[:, :3] / new_points[:, 3][:, None]
 
         # Manage bundling
@@ -496,10 +496,13 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    origin_to_left = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-    original_pose = np.dot(intrinsic_matrix, origin_to_left[:3])  # But needs to be placed into world coordinates
-    poses = [original_pose]  # The first keyframe is added
-    transforms = [origin_to_left]
+    left_frame_extrinsic_matrix = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
+
+    # But needs to be placed into world coordinates
+    original_projection = np.dot(intrinsic_matrix, left_frame_extrinsic_matrix[:3])
+
+    projections = [original_projection]  # The first keyframe is added
+    extrinsic_matrices = [left_frame_extrinsic_matrix]
 
     # Initialise point tracking
     tracks = []
@@ -563,16 +566,15 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 has_joined = True
 
             # Pose estimation
-            L_points, R_points, origin_to_right, pose = poseEstimation(L_matches,
-                                                                       R_matches,
-                                                                       origin_to_left,
-                                                                       intrinsic_matrix)
-
+            L_points, R_points, right_frame_extrinsic_matrix, projection = poseEstimation(L_matches,
+                                                                                          R_matches,
+                                                                                          left_frame_extrinsic_matrix,
+                                                                                          intrinsic_matrix)
             if has_joined:
-                origin_to_origin_error = origin_to_right  # The origin to right should return to origin
+                origin_error = right_frame_extrinsic_matrix  # The origin to right should return to origin
             else:
-                poses.append(pose)  # Do not add origin twice
-                transforms.append(origin_to_right)
+                projections.append(projection)  # Do not add origin twice
+                extrinsic_matrices.append(right_frame_extrinsic_matrix)
 
             # Manage tracks
             new_popped_tracks, tracks = pointTracking(tracks,
@@ -583,7 +585,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             popped_tracks += new_popped_tracks
 
             # Update variables
-            origin_to_left = origin_to_right  # Right keyframe now becomes the left keyframe
+            left_frame_extrinsic_matrix = right_frame_extrinsic_matrix  # Right keyframe now becomes the left keyframe
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
@@ -598,7 +600,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Include the points in the tracks not popped at the end
     points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
-                                                                             poses,
+                                                                             projections,
                                                                              point_ID,
                                                                              points_2d,
                                                                              frame_indices,
@@ -611,7 +613,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     print("adjusting points...")
     tic = time.time()
 
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(transforms),
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
                                                                       intrinsic_matrix,
                                                                       points,
                                                                       np.array(points_2d),
