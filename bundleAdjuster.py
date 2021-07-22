@@ -128,10 +128,7 @@ def reformatResult(result, n_frames, n_points):
             a 3D cartesian frame position array
     """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
-
-    # Pose matrix transforms world coordinates to camera coordinates
     positions = findPositions(result.x[:n_frames * 6], n_frames)
-
     return points, positions
 
 
