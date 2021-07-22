@@ -291,15 +291,15 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
             The new previous pose matrix
     """
     # Find essential matrix and inliers
-    essential_left_to_right, mask_E = cv2.findEssentialMat(right_frame_points,
-                                                           left_frame_points,
-                                                           camera_matrix)
+    essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
+                                                    right_frame_points,
+                                                    camera_intrinsic_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_left_to_right,
-                                                                   right_frame_points,
+    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_matrix,
                                                                    left_frame_points,
-                                                                   camera_matrix,
+                                                                   right_frame_points,
+                                                                   camera_intrinsic_matrix,
                                                                    mask=mask_E)
 
     # Create the 4x3 pose matrix from rotation and translation
@@ -311,7 +311,7 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
     # Take world coordinates to left frame then to right frame
     right_frame_extrinsic_matrix = np.matmul(left_to_right_extrinsic_matrix, left_frame_extrinsic_matrix)
 
-    # The real world pose
+    # Projection from world coordinates to right frame image coordinates
     projection_matrix = np.dot(camera_intrinsic_matrix, right_frame_extrinsic_matrix[:3])
 
     # Usable points
