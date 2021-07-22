@@ -102,20 +102,35 @@ def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     return A
 
 
+def findPositions(parameters, n_frames):
+    """
+    Calculates the positions of the cameras based on their extrinsic matrices
+
+    :param parameters: Contiguous array of frame parameters (n_frames * 6,)
+    :param n_frames: The number of frames present in the parameters
+    :return: An array of 3D cartesian positions (n_frames, 3)
+    """
+    transformations = parameters.reshape((n_frames, 6))
+    inv_rotations = -transformations[:, :3]
+    translations = -transformations[:, 3:]
+    positions = rotate(translations, inv_rotations)
+    return positions
+
+
 def reformatResult(result, n_frames, n_points):
+    """
+    Converts the new calculated points, camera rotations and translations into usable arrays
+
+    :param result: Least squares regression result
+    :param n_frames: The number of frames
+    :param n_points: The number of points
+    :return: a 3D cartesian point array,
+            a 3D cartesian frame position array
+    """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
 
     # Pose matrix transforms world coordinates to camera coordinates
-    poses = result.x[:n_frames * 6].reshape((n_frames, 6))
-    rotations = poses[:, :3]
-
-    # Inverse of rotation is just negative angle
-    inv_rot = -rotations
-    translations = -poses[:, 3:]
-
-    # Rotation then translation takes camera position to origin
-    # Reverse translation then reverse rotation takes origin to camera
-    positions = rotate(translations, inv_rot)
+    positions = findPositions(result.x[:n_frames * 6], n_frames)
 
     return points, positions
 
