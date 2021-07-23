@@ -52,9 +52,9 @@ def project(points, frame_params, camera_matrix):
     return points_proj
 
 
-def bundleAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
+def pointAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     """
-    Creates a sparse Jacobian for the least squares regression
+    Creates a sparse Jacobian for the least squares regression for points and frames
 
     :param n_frames: The number of frames
     :param n_points: The number of 3D points
@@ -191,7 +191,7 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                            points_3D.reshape((len(points_3D) * 3,))))
 
     # Applying least squares to find the optimal projections and hence 3D points
-    A = bundleAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
+    A = pointAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
     res = least_squares(pointFun,
                         parameters,
                         jac_sparsity=A,
