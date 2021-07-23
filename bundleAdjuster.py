@@ -196,6 +196,47 @@ def reformatResult(result, n_frames, n_points):
     return points, positions
 
 
+def crossProductMatrix(vector):
+    return np.array([[0, -vector[2], vector[1]],
+                     [vector[2], 0, -vector[0]],
+                     [-vector[1], vector[0], 0]])
+
+
+def reformatPoseResult(result, n_frames, camera_intrinsic_matrix):
+    """
+    Converts the new calculated poses into an array of usable matrices
+
+    :param result: The result from adjustPose
+    :param n_frames: The number of frames used
+    :param camera_intrinsic_matrix: The instrinsic camera matrix
+    :return:
+    """
+    parameters = result.x.reshape((n_frames, 6))
+    rotations = parameters[:, :3]
+    translations = parameters[:, 3:]
+
+    theta = np.linalg.norm(rotations, axis=1)[:, np.newaxis]
+
+    # Normalising vectors
+    with np.errstate(invalid='ignore'):
+        v = rotations / theta
+        v = np.nan_to_num(v)
+
+    # Get the cross product matrix of the vectors
+    K = np.apply_along_axis(crossProductMatrix, 1, v)
+
+    # Generate an identity matrix for each cross product
+    I = np.repeat(np.eye(3, 3), len(K))
+
+    # Generate the trigonometric values of the rotations
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
+
+    # Create the array of 3x3 rotation matrices
+    rotation_matrices = I + (sin_theta * K) + ((1 - cos_theta) * K * K)
+    print(rotation_matrices, translations)
+
+
 def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
