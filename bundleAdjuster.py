@@ -117,11 +117,35 @@ def findPositions(parameters, n_frames):
     return positions
 
 
-def poseFun(parameters, n_frames):
-    positions = findPositions(parameters, n_frames)
+def distance(positions):
+    """
+    Calculates the distance between consecutive positions
+
+    :param positions: The frame positions in 3D space
+    :return: An array of distances
+    """
     next_positions = np.roll(positions, -1, axis=0)
-    distance = np.linalg.norm(next_positions - positions, axis=1).reshape((n_frames, 1))
-    cost = distance - 1
+    distance = np.linalg.norm(next_positions - positions, axis=1).reshape((len(positions), 1))
+    return distance
+
+
+def poseFun(parameters, n_frames, original_distances):
+    """
+    Returns the error between the current frame positions and the desired frame positions
+
+    :param parameters: The extrinsic frame matrix parameters from frameParameters
+    :param n_frames: The number of frames present
+    :param original_distances: The original distances between frames with the last entry 0
+    :return: Contiguous array for each set of parameters
+    """
+    # Find frame positions
+    positions = findPositions(parameters, n_frames)
+
+    # Calculate the difference and then magnitude
+    distances = distance(positions)
+
+    # Subtract the original distances with the final distance being 0 to bring the origins together
+    cost = distances - original_distances
     return cost.ravel()
 
 
