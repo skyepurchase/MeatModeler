@@ -267,13 +267,14 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
     :return: New 3D points from improved projections
     """
     frame_parameters = frameParameters(frame_extrinsic_matrices)
+    point_parameters = points_3D.reshape((len(points_3D) * 3,))
 
     # Concatenating frame parameters and 3D points
-    parameters = np.hstack((frame_parameters,
-                            points_3D.reshape((len(points_3D) * 3,))))
+    parameters = np.concatenate((frame_parameters,
+                                 point_parameters))
 
     # Applying least squares to find the optimal projections and hence 3D points
-    A = pointAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
+    A = pointAdjustmentSparsity(len(frame_extrinsic_matrices), len(points_3D), frame_indices, point_indices)
     res = least_squares(pointFun,
                         parameters,
                         jac_sparsity=A,
@@ -282,13 +283,13 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                         ftol=1e-4,
                         method='trf',
                         args=(camera_intrinsic_matrix,
-                              len(frame_parameters),
+                              len(frame_extrinsic_matrices),
                               len(points_3D),
                               frame_indices,
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, len(frame_parameters), len(points_3D))
+    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D))
 
 
 # def adjustPoses(frame_extrinsic_matrices, camera_intrinsic_matrix):
