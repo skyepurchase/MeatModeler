@@ -123,9 +123,15 @@ def distance(positions):
     :param positions: The frame positions in 3D space
     :return: An array of distances
     """
-    next_positions = np.roll(positions, -1, axis=0)
-    distance = np.linalg.norm(next_positions - positions, axis=1).reshape((len(positions), 1))
-    return distance
+    # Add the origin to the start
+    positions_with_origin = np.vstack(([1, 1, 1], positions))
+    next_positions = np.roll(positions_with_origin, -1, axis=0)
+
+    distances = np.linalg.norm(next_positions - positions_with_origin, axis=1).reshape((len(positions) + 1, 1))
+
+    # Distance from origin to first point is not required as origin cannot move
+    distances = distances[1:]
+    return distances
 
 
 def poseFun(parameters, n_frames, original_distances):
@@ -213,6 +219,7 @@ def reformatPoseResult(result, n_frames, camera_intrinsic_matrix):
     parameters = result.x.reshape((n_frames, 6))
     rotations = parameters[:, :3]
     translations = parameters[:, 3:]
+    translations = np.vstack(([1, 1, 1], translations))
 
     theta = np.linalg.norm(rotations, axis=1)[:, np.newaxis]
 
