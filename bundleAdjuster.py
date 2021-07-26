@@ -101,19 +101,19 @@ def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point
     return (points_proj - points_2D).ravel()
 
 
-# def findPositions(parameters, n_frames):
-#     """
-#     Calculates the positions of the cameras based on their extrinsic matrices
-#
-#     :param parameters: Contiguous array of frame parameters (n_frames * 6,)
-#     :param n_frames: The number of frames present in the parameters
-#     :return: An array of 3D cartesian positions (n_frames, 3)
-#     """
-#     extrinsic_parameters = parameters.reshape((n_frames, 6))
-#     inv_rotations = -extrinsic_parameters[:, :3]
-#     translations = -extrinsic_parameters[:, 3:]
-#     positions = rotate(translations, inv_rotations)
-#     return positions
+def findPositions(parameters, n_frames):
+    """
+    Calculates the positions of the cameras based on their extrinsic matrices
+
+    :param parameters: Contiguous array of frame parameters (n_frames * 6,)
+    :param n_frames: The number of frames present in the parameters
+    :return: An array of 3D cartesian positions (n_frames, 3)
+    """
+    extrinsic_parameters = parameters.reshape((n_frames, 6))
+    inv_rotations = -extrinsic_parameters[:, :3]
+    translations = -extrinsic_parameters[:, 3:]
+    positions = rotate(translations, inv_rotations)
+    return positions
 
 
 # def distance(positions):
@@ -197,7 +197,8 @@ def reformatPointResult(result, n_frames, n_points):
             a 3D cartesian frame position array
     """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
-    return points
+    positions = findPositions(result.x[:n_frames * 6], n_frames)
+    return points, positions
 
 
 # def crossProductMatrix(vector):
