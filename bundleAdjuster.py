@@ -186,7 +186,7 @@ def frameParameters(frame_extrinsic_matrices):
     return np.hstack((rotation_vectors, translation_vectors)).reshape((len(frame_extrinsic_matrices) * 6,))
 
 
-def reformatResult(result, n_frames, n_points):
+def reformatPointResult(result, n_frames, n_points):
     """
     Converts the new calculated points, camera rotations and translations into usable arrays
 
@@ -197,8 +197,7 @@ def reformatResult(result, n_frames, n_points):
             a 3D cartesian frame position array
     """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
-    positions = findPositions(result.x[:n_frames * 6], n_frames)
-    return points, positions
+    return points
 
 
 # def crossProductMatrix(vector):
@@ -270,7 +269,7 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
 
     # Concatenating frame parameters and 3D points
     parameters = np.hstack((frame_parameters,
-                           points_3D.reshape((len(points_3D) * 3,))))
+                            points_3D.reshape((len(points_3D) * 3,))))
 
     # Applying least squares to find the optimal projections and hence 3D points
     A = pointAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
@@ -288,4 +287,4 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                               point_indices,
                               points_2D))
 
-    return reformatResult(res, len(frame_parameters), len(points_3D))
+    return reformatPointResult(res, len(frame_parameters), len(points_3D))
