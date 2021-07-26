@@ -288,3 +288,33 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                               points_2D))
 
     return reformatPointResult(res, len(frame_parameters), len(points_3D))
+
+
+# def adjustPoses(frame_extrinsic_matrices, camera_intrinsic_matrix):
+#     """
+#     Adjusts the positions of the frames calculated by poseEstimation in processor module.
+#     It is assumed the first and last extrinsic matrix represent the origin
+#     With the last origin being the erroneous origin calculated between the last frame and first frame
+#
+#     :param frame_extrinsic_matrices: Array of extrinsic matrix in the order of the frames
+#     :param camera_intrinsic_matrix: The intrinsic matrix for the camera used
+#     :return: Array of projection matrices
+#     """
+#     # Remove origin as least-square should not edit it
+#     frame_parameters = frameParameters(frame_extrinsic_matrices[1:])
+#
+#     # Find the original distance between points to preserve that property
+#     original_positions = findPositions(frame_parameters, len(frame_extrinsic_matrices) - 1)
+#     original_distances = distance(original_positions)
+#
+#     # The 'original' distance between the origin and erroneous origin should be 0
+#     original_distances[-1, 0] = 0
+#
+#     res = least_squares(poseFun,
+#                         frame_parameters,
+#                         verbose=2,
+#                         ftol=1e-4,
+#                         method='trf',
+#                         args=(len(frame_extrinsic_matrices) - 1, original_distances))
+#
+#     reformatPoseResult(res, len(frame_extrinsic_matrices) - 1, camera_intrinsic_matrix)
