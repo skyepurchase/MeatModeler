@@ -101,57 +101,57 @@ def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point
     return (points_proj - points_2D).ravel()
 
 
-def findPositions(parameters, n_frames):
-    """
-    Calculates the positions of the cameras based on their extrinsic matrices
-
-    :param parameters: Contiguous array of frame parameters (n_frames * 6,)
-    :param n_frames: The number of frames present in the parameters
-    :return: An array of 3D cartesian positions (n_frames, 3)
-    """
-    extrinsic_parameters = parameters.reshape((n_frames, 6))
-    inv_rotations = -extrinsic_parameters[:, :3]
-    translations = -extrinsic_parameters[:, 3:]
-    positions = rotate(translations, inv_rotations)
-    return positions
-
-
-def distance(positions):
-    """
-    Calculates the distance between consecutive positions
-
-    :param positions: The frame positions in 3D space
-    :return: An array of distances
-    """
-    # Add the origin to the start
-    positions_with_origin = np.vstack(([1, 1, 1], positions))
-    next_positions = np.roll(positions_with_origin, -1, axis=0)
-
-    distances = np.linalg.norm(next_positions - positions_with_origin, axis=1).reshape((len(positions) + 1, 1))
-
-    # Distance from origin to first point is not required as origin cannot move
-    distances = distances[1:]
-    return distances
+# def findPositions(parameters, n_frames):
+#     """
+#     Calculates the positions of the cameras based on their extrinsic matrices
+#
+#     :param parameters: Contiguous array of frame parameters (n_frames * 6,)
+#     :param n_frames: The number of frames present in the parameters
+#     :return: An array of 3D cartesian positions (n_frames, 3)
+#     """
+#     extrinsic_parameters = parameters.reshape((n_frames, 6))
+#     inv_rotations = -extrinsic_parameters[:, :3]
+#     translations = -extrinsic_parameters[:, 3:]
+#     positions = rotate(translations, inv_rotations)
+#     return positions
 
 
-def poseFun(parameters, n_frames, original_distances):
-    """
-    Returns the error between the current frame positions and the desired frame positions
+# def distance(positions):
+#     """
+#     Calculates the distance between consecutive positions
+#
+#     :param positions: The frame positions in 3D space
+#     :return: An array of distances
+#     """
+#     # Add the origin to the start
+#     positions_with_origin = np.vstack(([1, 1, 1], positions))
+#     next_positions = np.roll(positions_with_origin, -1, axis=0)
+#
+#     distances = np.linalg.norm(next_positions - positions_with_origin, axis=1).reshape((len(positions) + 1, 1))
+#
+#     # Distance from origin to first point is not required as origin cannot move
+#     distances = distances[1:]
+#     return distances
 
-    :param parameters: The extrinsic frame matrix parameters from frameParameters
-    :param n_frames: The number of frames present
-    :param original_distances: The original distances between frames with the last entry 0
-    :return: Contiguous array for each set of parameters
-    """
-    # Find frame positions
-    positions = findPositions(parameters, n_frames)
 
-    # Calculate the difference and then magnitude
-    distances = distance(positions)
-
-    # Subtract the original distances with the final distance being 0 to bring the origins together
-    cost = distances - original_distances
-    return cost.ravel()
+# def poseFun(parameters, n_frames, original_distances):
+#     """
+#     Returns the error between the current frame positions and the desired frame positions
+#
+#     :param parameters: The extrinsic frame matrix parameters from frameParameters
+#     :param n_frames: The number of frames present
+#     :param original_distances: The original distances between frames with the last entry 0
+#     :return: Contiguous array for each set of parameters
+#     """
+#     # Find frame positions
+#     positions = findPositions(parameters, n_frames)
+#
+#     # Calculate the difference and then magnitude
+#     distances = distance(positions)
+#
+#     # Subtract the original distances with the final distance being 0 to bring the origins together
+#     cost = distances - original_distances
+#     return cost.ravel()
 
 
 def frameParameters(frame_extrinsic_matrices):
@@ -201,49 +201,57 @@ def reformatResult(result, n_frames, n_points):
     return points, positions
 
 
-def crossProductMatrix(vector):
-    return np.array([[0, -vector[2], vector[1]],
-                     [vector[2], 0, -vector[0]],
-                     [-vector[1], vector[0], 0]])
+# def crossProductMatrix(vector):
+#     return np.array([[0, -vector[2], vector[1]],
+#                      [vector[2], 0, -vector[0]],
+#                      [-vector[1], vector[0], 0]])
 
 
-def reformatPoseResult(result, n_frames, camera_intrinsic_matrix):
-    """
-    Converts the new calculated poses into an array of usable matrices
-
-    :param result: The result from adjustPose
-    :param n_frames: The number of frames used
-    :param camera_intrinsic_matrix: The instrinsic camera matrix
-    :return:
-    """
-    parameters = result.x.reshape((n_frames, 6))
-    rotations = parameters[:, :3]
-    translations = parameters[:, 3:]
-    translations = np.vstack(([1, 1, 1], translations))
-
-    theta = np.linalg.norm(rotations, axis=1)[:, np.newaxis]
-
-    # Normalising vectors
-    with np.errstate(invalid='ignore'):
-        v = rotations / theta
-        v = np.nan_to_num(v)
-
-    # Get the cross product matrix of the vectors
-    K = np.apply_along_axis(crossProductMatrix, 1, v)
-
-    # Generate an identity matrix for each cross product
-    I = np.repeat([np.eye(3, 3)], len(K), axis=0)
-
-    # Generate the trigonometric values of the rotations
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
-
-    # Create the array of 3x3 rotation matrices
-    cos_theta = np.expand_dims(np.expand_dims(cos_theta, axis=1), axis=2)
-    sin_theta = np.expand_dims(np.expand_dims(sin_theta, axis=1), axis=2)
-    rotation_matrices = I + (sin_theta * K) + ((1 - cos_theta) * K * K)
-    rotation_matrices = np.vstack((np.eye(3, 3), rotation_matrices))
-    print(rotation_matrices, translations)
+# def reformatPoseResult(result, n_frames, camera_intrinsic_matrix):
+#     """
+#     Converts the new calculated poses into an array of usable matrices
+#
+#     :param result: The result from adjustPose
+#     :param n_frames: The number of frames used
+#     :param camera_intrinsic_matrix: The instrinsic camera matrix
+#     :return:
+#     """
+#     parameters = result.x.reshape((n_frames, 6))
+#     rotations = parameters[:, :3]
+#     translations = parameters[:, 3:]
+#     translations = np.vstack(([1, 1, 1], translations))
+#
+#     theta = np.linalg.norm(rotations, axis=1)[:, np.newaxis]
+#
+#     # Normalising vectors
+#     with np.errstate(invalid='ignore'):
+#         v = rotations / theta
+#         v = np.nan_to_num(v)
+#
+#     # Get the cross product matrix of the vectors
+#     K = np.apply_along_axis(crossProductMatrix, 1, v)
+#     print(K)
+#
+#     # Generate an identity matrix for each cross product
+#     I = np.repeat([np.eye(3, 3)], len(K), axis=0)
+#
+#     # Generate the trigonometric values of the rotations
+#     cos_theta = np.cos(theta)
+#     sin_theta = np.sin(theta)
+#
+#     # Create the array of 3x3 rotation matrices
+#     cos_theta = np.expand_dims(np.expand_dims(cos_theta, axis=1), axis=2)
+#     sin_theta = np.expand_dims(np.expand_dims(sin_theta, axis=1), axis=2)
+#     rotation_matrices = I + (sin_theta * K) + ((1 - cos_theta) * np.einsum("...ij,...jk", K, K))
+#     print(rotation_matrices)
+#     rotation_matrices = np.vstack(([np.eye(3, 3)], rotation_matrices))
+#     print(np.hstack((rotation_matrices, translations)))
+#
+#     # Concatenate rotations and translation to make extrinsic matrices
+#     extrinsic_matrices = np.hstack((rotation_matrices, translations))
+#     # Multiply by camera intrinsics to get projection matrices
+#     projection_matrices = np.einsum("ij,...jk", camera_intrinsic_matrix, extrinsic_matrices)
+#     return projection_matrices
 
 
 def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
