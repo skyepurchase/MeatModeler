@@ -549,32 +549,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           orb,
                                                                                           flann_params)
 
-            start_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
-
-            # Calculate similarity
-            start_L_matches, start_R_matches, features, _ = featureTracking(start_frame_grey,
-                                                                            prev_orb_points,
-                                                                            prev_orb_descriptors,
-                                                                            orb,
-                                                                            flann_params)
-
-            # If there is a greater similarity to the start frame than to the previous frame the loop has closed
-            if (len(start_L_matches) / len(features)) >= (len(L_matches) / len(prev_orb_points)) and keyframe_ID > 1:
-                L_matches = start_L_matches
-                R_matches = start_R_matches
-                keyframe_ID = 0
-                has_joined = True
-
             # Pose estimation
             L_points, R_points, right_frame_extrinsic_matrix, projection = poseEstimation(L_matches,
                                                                                           R_matches,
                                                                                           left_frame_extrinsic_matrix,
                                                                                           intrinsic_matrix)
-            if has_joined:
-                origin_error = right_frame_extrinsic_matrix  # The origin to right should return to origin
-            else:
-                projections.append(projection)  # Do not add origin twice
-                extrinsic_matrices.append(right_frame_extrinsic_matrix)
+
+            projections.append(projection)
+            extrinsic_matrices.append(right_frame_extrinsic_matrix)
 
             # Manage tracks
             new_popped_tracks, tracks = pointTracking(tracks,
@@ -590,10 +572,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             keyframe_ID += 1
 
         success, frame = cap.read()
-
-        # If loop has occurred don't keep processing
-        if has_joined:
-            success = False
 
     # Add the remaining tracks which are implicitly popped
     popped_tracks += tracks
