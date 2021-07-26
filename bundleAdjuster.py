@@ -1,5 +1,4 @@
 import numpy as np
-import cv2
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
 
@@ -226,14 +225,17 @@ def reformatPoseResult(result, n_frames, camera_intrinsic_matrix):
     K = np.apply_along_axis(crossProductMatrix, 1, v)
 
     # Generate an identity matrix for each cross product
-    I = np.repeat(np.eye(3, 3), len(K))
+    I = np.repeat([np.eye(3, 3)], len(K), axis=0)
 
     # Generate the trigonometric values of the rotations
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
 
     # Create the array of 3x3 rotation matrices
+    cos_theta = np.expand_dims(np.expand_dims(cos_theta, axis=1), axis=2)
+    sin_theta = np.expand_dims(np.expand_dims(sin_theta, axis=1), axis=2)
     rotation_matrices = I + (sin_theta * K) + ((1 - cos_theta) * K * K)
+    rotation_matrices = np.vstack((np.eye(3, 3), rotation_matrices))
     print(rotation_matrices, translations)
 
 
