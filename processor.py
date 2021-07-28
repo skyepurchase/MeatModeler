@@ -365,6 +365,36 @@ def pointTracking(tracks, all_matches, keyframe_ID):
     return tracks
 
 
+def pathRecreations(extrinsic_matrices, last_ID):
+    """
+    Reconstructs the camera path in 3D space
+
+    :param extrinsic_matrices: A dictionary of dictionaries linking pairs of frames to an extrinsic matrix
+    :param last_ID: The last frame ID
+    :return: A list of extrinsic matrices for each successive frame
+    """
+    # Get the frames directly adjacent to the start frame
+    adjacent_frames = extrinsic_matrices.get(0)
+    new_adjacent_frames = adjacent_frames.copy()
+    updated = False
+    for frame_ID, extrinsic_matrix1 in adjacent_frames.items():
+        if frame_ID == last_ID:
+            continue
+
+        for next_frame_ID, extrinsic_matrix2 in extrinsic_matrices.get(frame_ID).items():
+            new_extrinsic_matrix = np.dot(extrinsic_matrix2, extrinsic_matrix1)
+
+            if next_frame_ID not in adjacent_frames:
+                updated = True
+                new_adjacent_frames[next_frame_ID] = new_extrinsic_matrix
+
+    if updated:
+        extrinsic_matrices[0] = new_adjacent_frames
+        return pathRecreations(extrinsic_matrices, last_ID)
+    else:
+        return list(new_adjacent_frames.values())
+
+
 def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
@@ -590,24 +620,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         success, frame = cap.read()
 
-    # Generate projection and extrinsic matrices
-    projections = []
-    extrinsics = []
-    for ID, pairwise_extrinsic_matrices in extrinsic_matrices.items():
-
-        if ID > 0:
-            pairwise_extrinsic_matrix = pairwise_extrinsic_matrices[ID + 1]
-            actual_extrinsic_matrix = np.dot(pairwise_extrinsic_matrix, extrinsics[-1])
-        else:
-            actual_extrinsic_matrix = pairwise_extrinsic_matrices[0]
-            projection = np.dot(intrinsic_matrix, actual_extrinsic_matrix[:3])
-            projections.append(projection)
-            extrinsics.append(actual_extrinsic_matrix)
-            actual_extrinsic_matrix = pairwise_extrinsic_matrices[1]
-
-        projection = np.dot(intrinsic_matrix, actual_extrinsic_matrix[:3])
-        projections.append(projection)
-        extrinsics.append(actual_extrinsic_matrix)
+    linked_extrinsics = pathRecreations(extrinsic_matrices, keyframe_ID - 1)
+    linked_extrinsics = np.array(linked_extrinsics)
+    projections = np.einsum("ij,...jk", intrinsic_matrix, linked_extrinsics[:, :3])
 
     # Include the points in the tracks not popped at the end
     points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
