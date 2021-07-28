@@ -244,36 +244,38 @@ def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated
     return False, prev_frame_grey, prev_frame_points, accumulated_error
 
 
-def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, flann_params, threshold=0.75):
+def featureMatching(new_features, new_descriptors, all_features, all_descriptors, flann_params, threshold=0.75):
     """
     Finds which features in two keyframes match
 
-    :param new_keyframe: The keyframe to compare to the previous keyframe
-    :param prev_orb_points: The previous keyframe feature points
-    :param prev_orb_descriptors: The previous keyframe feature descriptors
-    :param orb: An ORB feature detection object
+    :param new_features: The features from the new keyframe
+    :param new_descriptors: The feature descriptions from the new keyframe
+    :param all_features: The previous features from all preceding keyframes
+    :param all_descriptors: The previous feature descriptions from all preceding keyframes
     :param flann_params: Parameters to tune FLANN matcher
     :param threshold: Ratio threshold for FLANN matches
-    :return: List of left frame matched Keypoints,
-            List of right frame matched Keypoints,
-            The new previous keyframe feature points,
-            The new previous keyframe feature descriptors
+    :return: A dictionary of the matches for each preceding keyframe
     """
     # Get new points and descriptors
-    new_points, new_descriptors = orb.detectAndCompute(new_keyframe, None)
+    all_matches = {}
 
-    # FLANN based approach to find matches
-    flann = cv2.FlannBasedMatcher(flann_params, {})
-    matches = flann.knnMatch(prev_orb_descriptors, new_descriptors, k=2)
+    for frame_ID, (points, descriptors) in enumerate(zip(all_features, all_descriptors)):
+        # FLANN based approach to find matches
+        flann = cv2.FlannBasedMatcher(flann_params, {})
+        matches = flann.knnMatch(descriptors, new_descriptors, k=2)
 
-    # Find which points can be considered new
-    good_matches = [match[0] for match in matches if
-                    len(match) == 2 and match[0].distance < threshold * match[1].distance]
+        # Find which points can be considered new
+        good_matches = [match[0] for match in matches if
+                        len(match) == 2  # Sometimes matches only includes one side not both
+                        and match[0].distance < threshold * match[1].distance]
+        print("Found", len(good_matches), "matches with keyframe", frame_ID)
 
-    left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
-    right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
+        left_matches = np.array([points[m.queryIdx].pt for m in good_matches])
+        right_matches = np.array([new_features[m.trainIdx].pt for m in good_matches])
+        new_matches = np.hstack((left_matches, right_matches))
+        all_matches[frame_ID] = new_matches
 
-    return left_matches, right_matches, new_points, new_descriptors
+    return all_matches
 
 
 def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_matrix, camera_intrinsic_matrix):
@@ -477,7 +479,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     print("Initialising...")
     tic = time.time()
 
-    orb = cv2.ORB_create(nfeatures=20000)
+    orb = cv2.ORB_create(nfeatures=2000)
 
     cap = cv2.VideoCapture(video)
 
@@ -492,8 +494,10 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                 **feature_params)
     accumulative_error = 0
 
-    # Initialise feature tracking
-    prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
+    # Initialise feature matching
+    features, descriptors = orb.detectAndCompute(prev_frame_grey, None)
+    all_features = [features]
+    all_descriptors = [descriptors]
 
     # Initialise pose estimation
     left_frame_extrinsic_matrix = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
@@ -542,14 +546,28 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                                threshold=0.1)
 
         if is_keyframe:
+            # Detect features and compute descriptors
+            print("Detecting features in keyframe", keyframe_ID, "...", end=" ")
+            features, descriptors = orb.detectAndCompute(frame_grey, None)
+            print("Found", len(features), "features")
+
             # Calculate matches
-            L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                          prev_orb_points,
-                                                                                          prev_orb_descriptors,
-                                                                                          orb,
-                                                                                          flann_params)
+            print("Matching keyframe", keyframe_ID)
+            all_matches = featureMatching(features,
+                                          descriptors,
+                                          all_features,
+                                          all_descriptors,
+                                          flann_params)
+
+            # Update all features and descriptors
+            all_features.append(features)
+            all_descriptors.append(descriptors)
 
             # Pose estimation
+            keys = list(all_matches.keys())
+            matches = all_matches.get(keys[-1])  # For now pose estimate with the last frame
+            L_matches = matches[:, :2]
+            R_matches = matches[:, 2:]
             L_points, R_points, right_frame_extrinsic_matrix, projection = poseEstimation(L_matches,
                                                                                           R_matches,
                                                                                           left_frame_extrinsic_matrix,
