@@ -546,28 +546,34 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             all_descriptors.append(descriptors)
 
             # Pose estimation
-            pairwise_extrinsic_matrices = {}
             all_points_2D = {}
-            for frame_ID, matches in all_matches.items():
+            for prev_keyframe_ID, matches in all_matches.items():
 
                 if matches.size == 0 or len(matches[:, 0]) < 8:  # Need at least 8 points
                     continue
 
-                print("Finding inliers with keyframe", frame_ID, end="...")
+                print("Finding inliers with keyframe", prev_keyframe_ID, end="...")
 
                 points, pairwise_extrinsic_matrix = poseEstimation(matches[:, :2],
                                                                    matches[:, 2:],
                                                                    intrinsic_matrix)
 
                 if points is not None:
-                    pairwise_extrinsic_matrices[frame_ID] = pairwise_extrinsic_matrix
-                    all_points_2D[frame_ID] = points
+                    # If the previous frame is already present add the new pairwise matrix
+                    if prev_keyframe_ID in extrinsic_matrices.keys():
+                        pairwise_extrinsic_matrices = extrinsic_matrices[prev_keyframe_ID]
+                        pairwise_extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrix
+                        extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
+                    # Otherwise create a new entry
+                    else:
+                        pairwise_extrinsic_matrices = {keyframe_ID: pairwise_extrinsic_matrix}
+                        extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
+
+                    all_points_2D[prev_keyframe_ID] = points
 
                     print("Found", len(points[:, 0]), "inliers")
                 else:
                     print("No inliers found")
-
-            extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrices
 
             # Manage tracks
             print("Grouping new points", end="...")
@@ -587,13 +593,17 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     # Generate projection and extrinsic matrices
     projections = []
     extrinsics = []
-    for frame_ID, pairwise_extrinsic_matrices in extrinsic_matrices.items():
+    for ID, pairwise_extrinsic_matrices in extrinsic_matrices.items():
 
-        if frame_ID > 0:
-            pairwise_extrinsic_matrix = pairwise_extrinsic_matrices[frame_ID - 1]
+        if ID > 0:
+            pairwise_extrinsic_matrix = pairwise_extrinsic_matrices[ID + 1]
             actual_extrinsic_matrix = np.dot(pairwise_extrinsic_matrix, extrinsics[-1])
         else:
             actual_extrinsic_matrix = pairwise_extrinsic_matrices[0]
+            projection = np.dot(intrinsic_matrix, actual_extrinsic_matrix[:3])
+            projections.append(projection)
+            extrinsics.append(actual_extrinsic_matrix)
+            actual_extrinsic_matrix = pairwise_extrinsic_matrices[1]
 
         projection = np.dot(intrinsic_matrix, actual_extrinsic_matrix[:3])
         projections.append(projection)
@@ -601,7 +611,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Include the points in the tracks not popped at the end
     points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
-                                                                             projections,
+                                                                             np.array(projections),
                                                                              point_ID,
                                                                              points_2d,
                                                                              frame_indices,
