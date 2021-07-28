@@ -309,6 +309,10 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
+
+    if len(usable_left_points) < 8:  # If less than 8 are usable then this is very unreliable
+        return None, None
+
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
     usable_points = np.hstack((usable_left_points, usable_right_points))
 
@@ -320,10 +324,8 @@ def pointTracking(tracks, all_matches, keyframe_ID):
     Checks through the current tracks and updates them based on the provided matches
 
     :param tracks: Current tracks
-    :param prev_keyframe_ID: The identity number of the previous keyframe
-    :param feature_points: The feature point matches from the previous keyframe
+    :param all_matches: A dictionary of the matches between the keyframe and all previous keyframes
     :param keyframe_ID: The identity number of the current keyframe
-    :param correspondents: The corresponding feature match
     :return: The tracks to be processed,
             Continuing tracks
     """
@@ -489,8 +491,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Initialise point tracking
     tracks = []
-    popped_tracks = []
-    prev_keyframe_ID = 0
     keyframe_ID = 1
 
     # Initialise bundling
@@ -500,10 +500,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     point_ID = 0
 
     toc = time.time()
+
     print("Initialisation complete.")
     print(toc - tic, "seconds.\n")
 
     print("Finding points...")
+
     tic = time.time()
 
     # Processing loop
@@ -527,7 +529,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         if is_keyframe:
             # Detect features and compute descriptors
             print("Detecting features in keyframe", keyframe_ID, end="...")
+
             features, descriptors = orb.detectAndCompute(frame_grey, None)
+
             print("Found", len(features), "features")
 
             # Calculate matches
@@ -545,18 +549,29 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             pairwise_extrinsic_matrices = {}
             all_points_2D = {}
             for frame_ID, matches in all_matches.items():
+
+                if matches.size == 0 or len(matches[:, 0]) < 8:  # Need at least 8 points
+                    continue
+
                 print("Finding inliers with keyframe", frame_ID, end="...")
+
                 points, pairwise_extrinsic_matrix = poseEstimation(matches[:, :2],
                                                                    matches[:, 2:],
                                                                    intrinsic_matrix)
-                pairwise_extrinsic_matrices[frame_ID] = pairwise_extrinsic_matrix
-                all_points_2D[frame_ID] = points
-                print("Found", len(points[:, 0]), "inliers")
+
+                if points is not None:
+                    pairwise_extrinsic_matrices[frame_ID] = pairwise_extrinsic_matrix
+                    all_points_2D[frame_ID] = points
+
+                    print("Found", len(points[:, 0]), "inliers")
+                else:
+                    print("No inliers found")
 
             extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrices
 
             # Manage tracks
             print("Grouping new points", end="...")
+
             tracks = pointTracking(tracks,
                                    all_points_2D,
                                    keyframe_ID)
@@ -593,10 +608,13 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                              point_indices)
 
     toc = time.time()
+
     print(len(points), "points found.")
+    print(len(projections), "frames used.")
     print(toc - tic, "seconds.\n")
 
     print("adjusting points...")
+
     tic = time.time()
 
     adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsics),
@@ -607,10 +625,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                       np.array(point_indices))
 
     toc = time.time()
+
     print("adjustment complete.")
     print(toc - tic, "seconds.\n")
 
     print("Saving point cloud...")
+
     tic = time.time()
 
     filename = path + "Cloud.ply"
