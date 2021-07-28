@@ -286,10 +286,8 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
     :param left_frame_points: Undistorted matched points from the left frame
     :param right_frame_points: Undistorted matched points from the right frame
     :param camera_intrinsic_matrix: The intrinsic matrix of the camera
-    :return: The used left points,
-            The used right points,
-            The corresponding 3D points,
-            The new previous pose matrix
+    :return: The used point matches,
+            The pairwise extrinsic matrix
     """
     # Find essential matrix and inliers
     essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
@@ -312,11 +310,12 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
+    usable_points = np.hstack((usable_left_points, usable_right_points))
 
-    return usable_left_points, usable_right_points, left_to_right_extrinsic_matrix
+    return usable_points, left_to_right_extrinsic_matrix
 
 
-def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
+def pointTracking(tracks, all_matches, keyframe_ID):
     """
     Checks through the current tracks and updates them based on the provided matches
 
@@ -330,46 +329,38 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     """
 
     new_tracks = []
-    updated_tracks = []
-    popped_tracks = []
 
-    # For each match check if this feature already exists
-    for feature_point, correspondent in zip(feature_points, correspondents):
-        # Convert to tuples
-        feature_point = (feature_point[0], feature_point[1])
-        correspondent = (correspondent[0], correspondent[1])
+    for prev_keyframe_ID, matches in all_matches.items():
+        # For each match check if this feature already exists
+        for feature_point, correspondent in zip(matches[:, :2], matches[:, 2:]):
+            # Convert to tuples
+            feature_point = (feature_point[0], feature_point[1])
+            correspondent = (correspondent[0], correspondent[1])
 
-        is_new_track = True
+            is_new_track = True
 
-        for track in tracks:
-            # If the current point matches the track's last point then they reference the same feature
-            prior_point = track.getLastPoint()
+            for track in tracks:
+                # If the current point matches the track's last point then they reference the same feature
+                prior_points = track.get2DPoints()
 
-            # So update the track
-            if feature_point == prior_point:
-                track.update(keyframe_ID, correspondent)
-                is_new_track = False
-                break
+                # So update the track
+                if feature_point in prior_points:
+                    track.update(keyframe_ID, correspondent)
+                    is_new_track = False
+                    break
 
-        # Feature was not found elsewhere
-        if is_new_track:
-            new_track = Track(prev_keyframe_ID,
-                              feature_point,
-                              keyframe_ID,
-                              correspondent)
-            new_tracks.append(new_track)
-
-    for track in tracks:
-        if track.wasUpdated():
-            track.reset()
-            updated_tracks.append(track)
-        else:
-            popped_tracks.append(track)
+            # Feature was not found elsewhere
+            if is_new_track:
+                new_track = Track(prev_keyframe_ID,
+                                  feature_point,
+                                  keyframe_ID,
+                                  correspondent)
+                new_tracks.append(new_track)
 
     # Add new tracks
-    updated_tracks += new_tracks
+    tracks += new_tracks
 
-    return popped_tracks, updated_tracks
+    return tracks
 
 
 def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
@@ -535,7 +526,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         if is_keyframe:
             # Detect features and compute descriptors
-            print("Detecting features in keyframe", keyframe_ID, "...", end=" ")
+            print("Detecting features in keyframe", keyframe_ID, end="...")
             features, descriptors = orb.detectAndCompute(frame_grey, None)
             print("Found", len(features), "features")
 
@@ -552,32 +543,31 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             # Pose estimation
             pairwise_extrinsic_matrices = {}
+            all_points_2D = {}
             for frame_ID, matches in all_matches.items():
                 print("Finding inliers with keyframe", frame_ID, end="...")
-                L_points, R_points, pairwise_extrinsic_matrix = poseEstimation(matches[:, :2],
-                                                                               matches[:, 2:],
-                                                                               intrinsic_matrix)
+                points, pairwise_extrinsic_matrix = poseEstimation(matches[:, :2],
+                                                                   matches[:, 2:],
+                                                                   intrinsic_matrix)
                 pairwise_extrinsic_matrices[frame_ID] = pairwise_extrinsic_matrix
-                print("Found", len(L_points), "inliers")
+                all_points_2D[frame_ID] = points
+                print("Found", len(points[:, 0]), "inliers")
 
             extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrices
 
             # Manage tracks
-            new_popped_tracks, tracks = pointTracking(tracks,
-                                                      prev_keyframe_ID,
-                                                      L_points,
-                                                      keyframe_ID,
-                                                      R_points)
-            popped_tracks += new_popped_tracks
+            print("Grouping new points", end="...")
+            tracks = pointTracking(tracks,
+                                   all_points_2D,
+                                   keyframe_ID)
+
+            print(len(tracks), "potential points")
+            print()
 
             # Update variables
-            prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
         success, frame = cap.read()
-
-    # Add the remaining tracks which are implicitly popped
-    popped_tracks += tracks
 
     # Generate projection and extrinsic matrices
     projections = []
@@ -592,7 +582,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         extrinsics.append(extrinsic_matrix)
 
     # Include the points in the tracks not popped at the end
-    points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
+    points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
                                                                              projections,
                                                                              point_ID,
                                                                              points_2d,
