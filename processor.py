@@ -573,13 +573,16 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     projections = []
     extrinsics = []
     for frame_ID, pairwise_extrinsic_matrices in extrinsic_matrices.items():
+
         if frame_ID > 0:
-            extrinsic_matrix = pairwise_extrinsic_matrices[frame_ID - 1]
+            pairwise_extrinsic_matrix = pairwise_extrinsic_matrices[frame_ID - 1]
+            actual_extrinsic_matrix = np.dot(pairwise_extrinsic_matrix, extrinsics[-1])
         else:
-            extrinsic_matrix = pairwise_extrinsic_matrices[0]
-        projection = np.dot(intrinsic_matrix, extrinsic_matrix[:3])
+            actual_extrinsic_matrix = pairwise_extrinsic_matrices[0]
+
+        projection = np.dot(intrinsic_matrix, actual_extrinsic_matrix[:3])
         projections.append(projection)
-        extrinsics.append(extrinsic_matrix)
+        extrinsics.append(actual_extrinsic_matrix)
 
     # Include the points in the tracks not popped at the end
     points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
