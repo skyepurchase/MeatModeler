@@ -307,16 +307,19 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
     # Convert to homogeneous 4x4 transformation matrix
     left_to_right_extrinsic_matrix = np.vstack((left_to_right_extrinsic_matrix, np.array([0, 0, 0, 1])))
 
+    # Convert to projection matrix
+    projection = np.dot(camera_intrinsic_matrix, left_to_right_extrinsic_matrix[:3])
+
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
 
     if len(usable_left_points) < 8:  # If less than 8 are usable then this is very unreliable
-        return None, None
+        return None, None, None
 
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
     usable_points = np.hstack((usable_left_points, usable_right_points))
 
-    return usable_points, left_to_right_extrinsic_matrix
+    return usable_points, left_to_right_extrinsic_matrix, projection
 
 
 def pointTracking(tracks, all_matches, keyframe_ID):
@@ -576,34 +579,48 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             all_descriptors.append(descriptors)
 
             # Pose estimation
+
+            # Pose Assumption
+            # Use openCV recoverPose to get a base assumption of the relative location of the first two frames
             all_points_2D = {}
-            for prev_keyframe_ID, matches in all_matches.items():
+            if keyframe_ID == 1:
+                matches = all_matches[0]  # Get matches between this frame (frame 1) and the first frame (frame 0)
+                points, pairwise_extrinsic_matrix, projection = poseEstimation(matches[:, :2],
+                                                                               matches[:, 2:],
+                                                                               intrinsic_matrix)
+                # TODO: remove
+                pair_extrinsic_matrices = extrinsic_matrices[0]
+                pair_extrinsic_matrices[1] = pairwise_extrinsic_matrix
+                extrinsic_matrices[0] = pair_extrinsic_matrices
+                all_points_2D[0] = points
+            else:
+                for prev_keyframe_ID, matches in all_matches.items():
 
-                if matches.size == 0 or len(matches[:, 0]) < 8:  # Need at least 8 points
-                    continue
+                    if matches.size == 0 or len(matches[:, 0]) < 8:  # Need at least 8 points
+                        continue
 
-                print("Finding inliers with keyframe", prev_keyframe_ID, end="...")
+                    print("Finding inliers with keyframe", prev_keyframe_ID, end="...")
 
-                points, pairwise_extrinsic_matrix = poseEstimation(matches[:, :2],
-                                                                   matches[:, 2:],
-                                                                   intrinsic_matrix)
+                    points, pairwise_extrinsic_matrix, _ = poseEstimation(matches[:, :2],
+                                                                                   matches[:, 2:],
+                                                                                   intrinsic_matrix)
 
-                if points is not None:
-                    # If the previous frame is already present add the new pairwise matrix
-                    if prev_keyframe_ID in extrinsic_matrices.keys():
-                        pairwise_extrinsic_matrices = extrinsic_matrices[prev_keyframe_ID]
-                        pairwise_extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrix
-                        extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
-                    # Otherwise create a new entry
+                    if points is not None:
+                        # If the previous frame is already present add the new pairwise matrix
+                        if prev_keyframe_ID in extrinsic_matrices.keys():
+                            pairwise_extrinsic_matrices = extrinsic_matrices[prev_keyframe_ID]
+                            pairwise_extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrix
+                            extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
+                        # Otherwise create a new entry
+                        else:
+                            pairwise_extrinsic_matrices = {keyframe_ID: pairwise_extrinsic_matrix}
+                            extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
+
+                        all_points_2D[prev_keyframe_ID] = points
+
+                        print("Found", len(points[:, 0]), "inliers")
                     else:
-                        pairwise_extrinsic_matrices = {keyframe_ID: pairwise_extrinsic_matrix}
-                        extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
-
-                    all_points_2D[prev_keyframe_ID] = points
-
-                    print("Found", len(points[:, 0]), "inliers")
-                else:
-                    print("No inliers found")
+                        print("No inliers found")
 
             # Manage tracks
             print("Grouping new points", end="...")
