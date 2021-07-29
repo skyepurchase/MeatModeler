@@ -283,11 +283,12 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
 
-    :param left_frame_points: Undistorted matched points from the left frame
-    :param right_frame_points: Undistorted matched points from the right frame
+    :param left_frame_points: Matched points from the left frame
+    :param right_frame_points: Matched points from the right frame
     :param camera_intrinsic_matrix: The intrinsic matrix of the camera
     :return: The used point matches,
             The pairwise extrinsic matrix
+            The pairwise projection matrix
     """
     # Find essential matrix and inliers
     essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
@@ -295,20 +296,20 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
                                                     camera_intrinsic_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_matrix,
-                                                                   left_frame_points,
-                                                                   right_frame_points,
-                                                                   camera_intrinsic_matrix,
-                                                                   mask=mask_E)
+    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
+                                       left_frame_points,
+                                       right_frame_points,
+                                       camera_intrinsic_matrix,
+                                       mask=mask_E)
 
     # Create the 4x3 pose matrix from rotation and translation
-    left_to_right_extrinsic_matrix = np.hstack([R_left_to_right, t_left_to_right])
+    extrinsic_matrix = np.hstack([R, t])
 
     # Convert to homogeneous 4x4 transformation matrix
-    left_to_right_extrinsic_matrix = np.vstack((left_to_right_extrinsic_matrix, np.array([0, 0, 0, 1])))
+    extrinsic_matrix = np.vstack((extrinsic_matrix, np.array([0, 0, 0, 1])))
 
     # Convert to projection matrix
-    projection = np.dot(camera_intrinsic_matrix, left_to_right_extrinsic_matrix[:3])
+    projection = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
 
     # Usable points
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
@@ -319,7 +320,7 @@ def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matri
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
     usable_points = np.hstack((usable_left_points, usable_right_points))
 
-    return usable_points, left_to_right_extrinsic_matrix, projection
+    return usable_points, extrinsic_matrix, projection
 
 
 def pointTracking(tracks, all_matches, keyframe_ID):
