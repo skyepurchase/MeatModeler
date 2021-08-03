@@ -521,51 +521,28 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             all_descriptors.append(descriptors)
 
             # Pose estimation
-
-            # Pose Assumption
-            # Use openCV recoverPose to get a base assumption of the relative location of the first two frames
-            if keyframe_ID == 1:
-                print("Finding inliers between first keyframes", end="...")
-
-                matches = all_matches[0]  # Get matches between this frame (frame 1) and the first frame (frame 0)
+            current_frame_tracks = []
+            for prev_keyframe_ID, matches in all_matches.items():
+                print("Finding points with frame", prev_keyframe_ID, end="...")
+                # Find the relative positions and triangulated points
                 usable_matches, R, t, new_points = initialPoseEstimation(matches,
                                                                          intrinsic_matrix)
 
-                print("found", len(usable_matches[:, 0]))
+                print("found", len(new_points))
 
-                # Create tracks for each of the new points
-                prev_tracks, new_frame_tracks, new_tracks = pointTracking([],
-                                                                          matches,
+                # Group the newly triangulated points into tracks
+                prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
+                                                                          usable_matches,
                                                                           new_points,
-                                                                          0,
-                                                                          1)
+                                                                          prev_keyframe_ID,
+                                                                          keyframe_ID)
 
-                frame_tracks[0] = prev_tracks
-                frame_tracks[1] = new_frame_tracks
+                frame_tracks[prev_keyframe_ID] = prev_tracks
+                current_frame_tracks += new_frame_tracks
                 tracks += new_tracks
-            else:
-                current_frame_tracks = []
-                for prev_keyframe_ID, matches in all_matches.items():
-                    print("Finding points with frame", prev_keyframe_ID, end="...")
-                    # Find the relative positions and triangulated points
-                    usable_matches, R, t, new_points = initialPoseEstimation(matches,
-                                                                             intrinsic_matrix)
 
-                    print("found", len(new_points))
-
-                    # Group the newly triangulated points into tracks
-                    prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
-                                                                              usable_matches,
-                                                                              new_points,
-                                                                              prev_keyframe_ID,
-                                                                              keyframe_ID)
-
-                    frame_tracks[prev_keyframe_ID] = prev_tracks
-                    current_frame_tracks += new_frame_tracks
-                    tracks += new_tracks
-
-                print(len(tracks), "potential points found.")
-                frame_tracks[keyframe_ID] = current_frame_tracks
+            print(len(tracks), "potential points found.")
+            frame_tracks[keyframe_ID] = current_frame_tracks
 
             # Update variables
             keyframe_ID += 1
