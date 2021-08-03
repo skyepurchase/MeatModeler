@@ -1,5 +1,4 @@
 import time
-import pprint
 
 import cv2
 import numpy as np
@@ -554,19 +553,24 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 frame_tracks[1] = new_frame_tracks
                 tracks += new_tracks
             else:
+                print("Finding position based on previous frames", end="...")
                 # Find the position of the frame based on previous 3D points
                 solved, rvec, tvec = poseEstimation(all_matches,
                                                     frame_tracks,
                                                     intrinsic_matrix)
 
                 extrinsic_vectors.append((rvec, tvec))
+                print("found")
 
+                current_frame_tracks = []
                 for prev_keyframe_ID, matches in all_matches.items():
+                    print("Finding points with frame", prev_keyframe_ID, end="...")
                     # Triangulate all the matches (regardless of whether they have been triangulated before)
                     new_points = triangulatePoints(matches,
                                                    extrinsic_vectors[prev_keyframe_ID],
                                                    (rvec, tvec),
                                                    intrinsic_matrix)
+                    print("found", len(new_points))
 
                     # Group the newly traingulated points into tracks
                     prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
@@ -576,8 +580,11 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                               keyframe_ID)
 
                     frame_tracks[prev_keyframe_ID] = prev_tracks
-                    frame_tracks[keyframe_ID] = new_frame_tracks
+                    current_frame_tracks += new_frame_tracks
                     tracks += new_tracks
+
+                print(len(tracks), "potential points found.")
+                frame_tracks[keyframe_ID] = current_frame_tracks
 
             # Update variables
             keyframe_ID += 1
