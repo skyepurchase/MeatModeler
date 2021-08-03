@@ -318,7 +318,7 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, projection_matrix
+    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, left_to_right_extrinsic_matrix, projection_matrix
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -483,7 +483,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Retrieve first frame
     _, start_frame = cap.read()
-    start_frame = undistortFrame(start_frame, intrinsic_matrix, distortion_coefficients)
 
     # Initialise keyframe tracking
     prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
@@ -496,13 +495,13 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    left_frame_extrinsic_matrix = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
+    left_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
 
     # But needs to be placed into world coordinates
-    original_projection = np.dot(intrinsic_matrix, left_frame_extrinsic_matrix[:3])
+    original_projection = np.dot(intrinsic_matrix, left_extrinsic[:3])
 
     projections = [original_projection]  # The first keyframe is added
-    extrinsic_matrices = [left_frame_extrinsic_matrix]
+    extrinsic_matrices = [left_extrinsic]
 
     # Initialise point tracking
     tracks = []
@@ -527,10 +526,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     success, frame = cap.read()
 
     while success:
-        # Whether the start frame is rejoined
-        has_joined = False
-
-        frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
         is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
@@ -550,13 +545,13 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                                                                                           flann_params)
 
             # Pose estimation
-            L_points, R_points, right_frame_extrinsic_matrix, projection = poseEstimation(L_matches,
-                                                                                          R_matches,
-                                                                                          left_frame_extrinsic_matrix,
-                                                                                          intrinsic_matrix)
+            L_points, R_points, right_extrinsic, pairwise_extrinsic, projection = poseEstimation(L_matches,
+                                                                                                 R_matches,
+                                                                                                 left_extrinsic,
+                                                                                                 intrinsic_matrix)
 
             projections.append(projection)
-            extrinsic_matrices.append(right_frame_extrinsic_matrix)
+            extrinsic_matrices.append(pairwise_extrinsic)
 
             # Manage tracks
             new_popped_tracks, tracks = pointTracking(tracks,
@@ -567,7 +562,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             popped_tracks += new_popped_tracks
 
             # Update variables
-            left_frame_extrinsic_matrix = right_frame_extrinsic_matrix  # Right keyframe now becomes the left keyframe
+            left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
@@ -611,3 +606,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         columns=['x', 'y', 'z']
     ))
     cloud.to_file(filename)
+
+    toc = time.time()
+    print("Point cloud saved.")
+    print(tic - toc)
