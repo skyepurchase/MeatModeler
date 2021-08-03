@@ -473,7 +473,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     frame_tracks = {}
 
     # Initialise triangulation
-    extrinsic_vectors = []
 
     # Initialise point tracking
     tracks = []
@@ -532,12 +531,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 usable_matches, R, t, new_points = initialPoseEstimation(matches,
                                                                          intrinsic_matrix)
 
-                # Convert origin to rotation and translation vectors
-                origin_rvec, _ = cv2.Rodrigues(np.eye(3, 3))
-                extrinsic_vectors.append((origin_rvec, np.array([[0], [0], [0]])))
-
-                extrinsic_vectors.append((cv2.Rodrigues(R)[0], t))
-
                 print("found", len(usable_matches[:, 0]))
 
                 # Create tracks for each of the new points
@@ -551,15 +544,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 frame_tracks[1] = new_frame_tracks
                 tracks += new_tracks
             else:
-                print("Finding position based on previous frames", end="...")
-                # Find the position of the frame based on previous 3D points
-                solved, rvec, tvec = poseEstimation(all_matches,
-                                                    frame_tracks,
-                                                    intrinsic_matrix)
-
-                extrinsic_vectors.append((rvec, tvec))
-                print("found")
-
                 current_frame_tracks = []
                 for prev_keyframe_ID, matches in all_matches.items():
                     print("Finding points with frame", prev_keyframe_ID, end="...")
@@ -569,7 +553,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
                     print("found", len(new_points))
 
-                    # Group the newly traingulated points into tracks
+                    # Group the newly triangulated points into tracks
                     prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
                                                                               usable_matches,
                                                                               new_points,
@@ -591,10 +575,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     toc = time.time()
 
     print(len(tracks), "points found.")
-    print(len(extrinsic_vectors), "frames used.")
+    # print(len(extrinsic_vectors), "frames used.")
     print(toc - tic, "seconds.\n")
-
-    fig_before = go.Figure()
 
     points = []
     point_indices = []
@@ -617,13 +599,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     tic = time.time()
 
-    frame_parameters = np.array(extrinsic_vectors).reshape(len(extrinsic_vectors)*6,)
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(frame_parameters,
-                                                                      intrinsic_matrix,
-                                                                      np.array(points),
-                                                                      np.array(points_2d),
-                                                                      np.array(frame_indices),
-                                                                      np.array(point_indices))
+    # adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(frame_parameters,
+    #                                                                   intrinsic_matrix,
+    #                                                                   np.array(points),
+    #                                                                   np.array(points_2d),
+    #                                                                   np.array(frame_indices),
+    #                                                                   np.array(point_indices))
 
     toc = time.time()
 
@@ -636,7 +617,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     filename = path + "Cloud.ply"
     cloud = PyntCloud(pd.DataFrame(
-        data=adjusted_points,
+        data=points,
         columns=['x', 'y', 'z']
     ))
     cloud.to_file(filename)
