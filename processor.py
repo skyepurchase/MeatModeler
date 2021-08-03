@@ -459,7 +459,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Retrieve first frame
     _, start_frame = cap.read()
-    start_frame = undistortFrame(start_frame, intrinsic_matrix, distortion_coefficients)
 
     # Initialise keyframe tracking
     prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
@@ -496,7 +495,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     success, frame = cap.read()
 
     while success:
-        frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
         is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
