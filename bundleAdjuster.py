@@ -254,11 +254,11 @@ def reformatPointResult(result, n_frames, n_points):
 #     return projection_matrices
 
 
-def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
+def adjustPoints(frame_parameters, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
     """
     Takes all the projections for the found 3D points and improves the projections
 
-    :param frame_extrinsic_matrices: The 4x4 extrinsic matrices for each frame
+    :param frame_parameters: The n*6 length array of rotation and translation vectors for each frame
     :param camera_intrinsic_matrix: The intrinsic camera matrix
     :param points_3D: The triangulated 3D points
     :param points_2D: The corresponding 2D image coordinates
@@ -266,7 +266,8 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
     :param point_indices: The 3D point corresponding to each 2D point
     :return: New 3D points from improved projections
     """
-    frame_parameters = frameParameters(frame_extrinsic_matrices)
+    n_frames = int(len(frame_parameters) / 6)
+
     point_parameters = points_3D.reshape((len(points_3D) * 3,))
 
     # Concatenating frame parameters and 3D points
@@ -274,7 +275,7 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                                  point_parameters))
 
     # Applying least squares to find the optimal projections and hence 3D points
-    A = pointAdjustmentSparsity(len(frame_extrinsic_matrices), len(points_3D), frame_indices, point_indices)
+    A = pointAdjustmentSparsity(n_frames, len(points_3D), frame_indices, point_indices)
     res = least_squares(pointFun,
                         parameters,
                         jac_sparsity=A,
@@ -283,13 +284,13 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                         ftol=1e-4,
                         method='trf',
                         args=(camera_intrinsic_matrix,
-                              len(frame_extrinsic_matrices),
+                              n_frames,
                               len(points_3D),
                               frame_indices,
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D))
+    return reformatPointResult(res, n_frames, len(points_3D))
 
 
 # def adjustPoses(frame_extrinsic_matrices, camera_intrinsic_matrix):
