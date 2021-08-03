@@ -279,7 +279,7 @@ def featureMatching(new_features, new_descriptors, all_features, all_descriptors
     return all_matches
 
 
-def initialPoseEstimation(points, camera_intrinsic_matrix):
+def poseEstimation(points, camera_intrinsic_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
@@ -493,8 +493,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
             for prev_keyframe_ID, matches in all_matches.items():
                 print("Finding points with frame", prev_keyframe_ID, end="...")
                 # Find the relative positions and triangulated points
-                usable_matches, R, t, new_points = initialPoseEstimation(matches,
-                                                                         intrinsic_matrix)
+                usable_matches, R, t, new_points = poseEstimation(matches,
+                                                                  intrinsic_matrix)
 
                 print("found", len(new_points))
 
