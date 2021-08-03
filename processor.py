@@ -299,17 +299,15 @@ def initialPoseEstimation(points, camera_intrinsic_matrix):
                                      camera_intrinsic_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R, tvec, mask_RP, points = cv2.recoverPose(E,
-                                                  left_points,
-                                                  right_points,
-                                                  camera_intrinsic_matrix,
-                                                  distanceThresh=10,
-                                                  mask=mask_E)
+    _, R, t, mask_RP, points = cv2.recoverPose(E,
+                                               left_points,
+                                               right_points,
+                                               camera_intrinsic_matrix,
+                                               distanceThresh=10,
+                                               mask=mask_E)
 
     new_points = points.T
     new_points = new_points[:, :3] / new_points[:, -1][:, None]
-
-    rvec, _ = cv2.Rodrigues(R)
 
     # Usable points
     usable_left_points = left_points[mask_RP[:, 0] == 1]
@@ -321,7 +319,7 @@ def initialPoseEstimation(points, camera_intrinsic_matrix):
     usable_points = np.hstack((usable_left_points, usable_right_points))
     usable_new_points = new_points[mask_RP[:, 0] == 1]
 
-    return usable_points, rvec, tvec, usable_new_points
+    return usable_points, R, t, usable_new_points
 
 
 def poseEstimation(all_matches, tracks, camera_intrinsic_matrix):
@@ -531,14 +529,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 print("Finding inliers between first keyframes", end="...")
 
                 matches = all_matches[0]  # Get matches between this frame (frame 1) and the first frame (frame 0)
-                usable_matches, rvec, tvec, new_points = initialPoseEstimation(matches,
-                                                                               intrinsic_matrix)
+                usable_matches, R, t, new_points = initialPoseEstimation(matches,
+                                                                         intrinsic_matrix)
 
                 # Convert origin to rotation and translation vectors
                 origin_rvec, _ = cv2.Rodrigues(np.eye(3, 3))
                 extrinsic_vectors.append((origin_rvec, np.array([[0], [0], [0]])))
 
-                extrinsic_vectors.append((rvec, tvec))
+                extrinsic_vectors.append((cv2.Rodrigues(R)[0], t))
 
                 print("found", len(usable_matches[:, 0]))
 
@@ -565,16 +563,15 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
                 current_frame_tracks = []
                 for prev_keyframe_ID, matches in all_matches.items():
                     print("Finding points with frame", prev_keyframe_ID, end="...")
-                    # Triangulate all the matches (regardless of whether they have been triangulated before)
-                    new_points = triangulatePoints(matches,
-                                                   extrinsic_vectors[prev_keyframe_ID],
-                                                   (rvec, tvec),
-                                                   intrinsic_matrix)
+                    # Find the relative positions and triangulated points
+                    usable_matches, R, t, new_points = initialPoseEstimation(matches,
+                                                                             intrinsic_matrix)
+
                     print("found", len(new_points))
 
                     # Group the newly traingulated points into tracks
                     prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
-                                                                              matches,
+                                                                              usable_matches,
                                                                               new_points,
                                                                               prev_keyframe_ID,
                                                                               keyframe_ID)
