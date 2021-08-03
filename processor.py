@@ -538,28 +538,34 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
         if is_keyframe:
             # Calculate matches
+            print("\nFinding matches", end="...")
             L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
                                                                                           prev_orb_points,
                                                                                           prev_orb_descriptors,
                                                                                           orb,
                                                                                           flann_params)
+            print("found", len(L_matches))
 
             # Pose estimation
+            print("Finding inliers", end="...")
             L_points, R_points, right_extrinsic, pairwise_extrinsic, projection = poseEstimation(L_matches,
                                                                                                  R_matches,
                                                                                                  left_extrinsic,
                                                                                                  intrinsic_matrix)
+            print("found", len(L_points))
 
             projections.append(projection)
             extrinsic_matrices.append(pairwise_extrinsic)
 
             # Manage tracks
+            print("Grouping points", end="...")
             new_popped_tracks, tracks = pointTracking(tracks,
                                                       prev_keyframe_ID,
                                                       L_points,
                                                       keyframe_ID,
                                                       R_points)
             popped_tracks += new_popped_tracks
+            print(len(popped_tracks), "potential points")
 
             # Update variables
             left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
@@ -572,12 +578,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     popped_tracks += tracks
 
     # Include the points in the tracks not popped at the end
+    print("Triangulating points", end="...")
     points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
                                                                              projections,
                                                                              point_ID,
                                                                              points_2d,
                                                                              frame_indices,
                                                                              point_indices)
+    print("done")
 
     toc = time.time()
     print(len(points), "points found.")
