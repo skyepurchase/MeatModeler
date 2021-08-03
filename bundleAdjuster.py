@@ -63,17 +63,17 @@ def pointAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     :return: Sparse Jacobian matrix
     """
     m = frame_indices.size * 2
-    n = n_frames * 6 + n_points * 3
+    n = n_frames + n_points * 3
     A = lil_matrix((m, n), dtype=int)
 
     i = np.arange(frame_indices.size)
-    for s in range(6):
-        A[2 * i, frame_indices * 6 + s] = 1
-        A[2 * i + 1, frame_indices * 6 + s] = 1
+    for s in range(1):
+        A[2 * i, frame_indices + s] = 1
+        A[2 * i + 1, frame_indices + s] = 1
 
     for s in range(3):
-        A[2 * i, n_frames * 6 + point_indices * 3 + s] = 1
-        A[2 * i + 1, n_frames * 6 + point_indices * 3 + s] = 1
+        A[2 * i, n_frames + point_indices * 3 + s] = 1
+        A[2 * i + 1, n_frames + point_indices * 3 + s] = 1
 
     return A
 
@@ -178,7 +178,9 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
     A = pointAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
     res = least_squares(pointFun,
                         parameters,
+                        jac_sparsity=A,
                         verbose=2,
+                        x_scale='jac',
                         ftol=1e-4,
                         method='trf',
                         args=(extrinsic_vectors,
