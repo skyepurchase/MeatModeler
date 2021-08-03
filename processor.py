@@ -322,38 +322,6 @@ def initialPoseEstimation(points, camera_intrinsic_matrix):
     return usable_points, R, t, usable_new_points
 
 
-def poseEstimation(all_matches, tracks, camera_intrinsic_matrix):
-    """
-    Estimates the pose of a new frame based on previously triangulated 3D points
-
-    :param all_matches: A dictionary of all the matches with previous frames (from featureMatching)
-    :param tracks: A dictionary of all the tracks present in each frame
-    :param camera_intrinsic_matrix: The intrinic matrix of the camera used
-    :return: Whether the estimation was successful
-            The rotation vector,
-            The translation vector
-    """
-    obj_points = []
-    img_points = []
-    for prev_keyframe_ID, matches in all_matches.items():
-        potential_tracks = tracks.get(prev_keyframe_ID)
-
-        for track in potential_tracks:
-            potential_coordinate = track.getCoordinate(prev_keyframe_ID)
-
-            if potential_coordinate in matches[:, :2]:
-                obj_points.append(track.getPoint())
-                img_points.append(potential_coordinate)
-
-    success, rvec, tvec = cv2.solvePnP(np.array(obj_points),
-                                       np.array(img_points),
-                                       camera_intrinsic_matrix,
-                                       np.zeros((4, 1)),
-                                       flags=0)
-
-    return success, rvec, tvec
-
-
 def triangulatePoints(matched_points, projection1_params, projection2_params, camera_intrinsic_matrix):
     """
     Takes a Nx4 array of matched points and projection matrices returning the corresponding 3D points
