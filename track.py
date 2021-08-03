@@ -1,18 +1,36 @@
 class Track:
-    def __init__(self, prev_frame_ID, point, frame_ID, correspondent):
-        self.first_frame_ID = prev_frame_ID
-        self.last_frame_ID = frame_ID
-        self.virtual_point_vector = [point, correspondent]
+    def __init__(self, prev_frame_ID, feature, frame_ID, correspondent, point):
+        """
+        tracks a 3D point through different frames
 
-    def update(self, frame_ID, correspondent):
-        self.last_frame_ID = frame_ID
-        self.virtual_point_vector.append(correspondent)
+        :param prev_frame_ID: The frame number of the previous frame
+        :param feature: The coordinates of the captured 3D point
+        :param frame_ID: The frame number of the current frame
+        :param correspondent: The coordinates of the corresponding feature
+        :param point: The corresponding 3D point
+        """
+        self.coordinates = {prev_frame_ID: feature,
+                            frame_ID: correspondent}
+        self.points = [point]
 
-    def getTriangulationData(self):
-        return self.first_frame_ID, \
-               self.last_frame_ID, \
-               self.virtual_point_vector[0], \
-               self.virtual_point_vector[-1]
+    def update(self, frame_ID, correspondent, point):
+        self.coordinates[frame_ID] = correspondent
+        self.points.append(point)
 
-    def get2DPoints(self):
-        return self.virtual_point_vector
+    def getCoordinate(self, frame_ID):
+        return self.coordinates.get(frame_ID)
+
+    def getCoordinates(self):
+        return self.coordinates
+
+    def getPoint(self):
+        """
+        :return: The original triangulated point
+        """
+        return self.points[0]
+
+    def getFinalPoint(self):
+        """
+        :return: The most disparate frames
+        """
+        return self.points[-1]

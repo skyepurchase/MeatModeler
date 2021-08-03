@@ -1,8 +1,10 @@
 import time
+import pprint
 
 import cv2
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 from pyntcloud import PyntCloud
 from PIL import Image, ExifTags
 
@@ -278,209 +280,160 @@ def featureMatching(new_features, new_descriptors, all_features, all_descriptors
     return all_matches
 
 
-def poseEstimation(left_frame_points, right_frame_points, camera_intrinsic_matrix):
+def initialPoseEstimation(points, camera_intrinsic_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
 
-    :param left_frame_points: Matched points from the left frame
-    :param right_frame_points: Matched points from the right frame
+    :param points: Nx4 array of image point matches
     :param camera_intrinsic_matrix: The intrinsic matrix of the camera
-    :return: The used point matches,
-            The pairwise extrinsic matrix
-            The pairwise projection matrix
+    :return: The used point matches (or if estimating based on previous points, a success value),
+            rotation vector,
+            translation vector
     """
+    left_points = points[:, :2]
+    right_points = points[:, 2:]
+
     # Find essential matrix and inliers
-    essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
-                                                    right_frame_points,
-                                                    camera_intrinsic_matrix)
+    E, mask_E = cv2.findEssentialMat(left_points,
+                                     right_points,
+                                     camera_intrinsic_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
-                                       left_frame_points,
-                                       right_frame_points,
-                                       camera_intrinsic_matrix,
-                                       mask=mask_E)
+    _, R, tvec, mask_RP, points = cv2.recoverPose(E,
+                                                  left_points,
+                                                  right_points,
+                                                  camera_intrinsic_matrix,
+                                                  distanceThresh=10,
+                                                  mask=mask_E)
 
-    # Create the 4x3 pose matrix from rotation and translation
-    extrinsic_matrix = np.hstack([R, t])
+    new_points = points.T
+    new_points = new_points[:, :3] / new_points[:, -1][:, None]
 
-    # Convert to homogeneous 4x4 transformation matrix
-    extrinsic_matrix = np.vstack((extrinsic_matrix, np.array([0, 0, 0, 1])))
-
-    # Convert to projection matrix
-    projection = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
+    rvec, _ = cv2.Rodrigues(R)
 
     # Usable points
-    usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
+    usable_left_points = left_points[mask_RP[:, 0] == 1]
 
     if len(usable_left_points) < 8:  # If less than 8 are usable then this is very unreliable
         return None, None, None
 
-    usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
+    usable_right_points = right_points[mask_RP[:, 0] == 1]
     usable_points = np.hstack((usable_left_points, usable_right_points))
+    usable_new_points = new_points[mask_RP[:, 0] == 1]
 
-    return usable_points, extrinsic_matrix, projection
+    return usable_points, rvec, tvec, usable_new_points
 
 
-def pointTracking(tracks, all_matches, keyframe_ID):
+def poseEstimation(all_matches, tracks, camera_intrinsic_matrix):
+    """
+    Estimates the pose of a new frame based on previously triangulated 3D points
+
+    :param all_matches: A dictionary of all the matches with previous frames (from featureMatching)
+    :param tracks: A dictionary of all the tracks present in each frame
+    :param camera_intrinsic_matrix: The intrinic matrix of the camera used
+    :return: Whether the estimation was successful
+            The rotation vector,
+            The translation vector
+    """
+    obj_points = []
+    img_points = []
+    for prev_keyframe_ID, matches in all_matches.items():
+        potential_tracks = tracks.get(prev_keyframe_ID)
+
+        for track in potential_tracks:
+            potential_coordinate = track.getCoordinate(prev_keyframe_ID)
+
+            if potential_coordinate in matches[:, :2]:
+                obj_points.append(track.getPoint())
+                img_points.append(potential_coordinate)
+
+    success, rvec, tvec = cv2.solvePnP(np.array(obj_points),
+                                       np.array(img_points),
+                                       camera_intrinsic_matrix,
+                                       np.zeros((4, 1)),
+                                       flags=0)
+
+    return success, rvec, tvec
+
+
+def triangulatePoints(matched_points, projection1_params, projection2_params, camera_intrinsic_matrix):
+    """
+    Takes a Nx4 array of matched points and projection matrices returning the corresponding 3D points
+
+    :param matched_points: Nx4 array of image points [projection1, projection2]
+    :param projection1_params: Either 3x4 matrix or tuple of rotation vector and translation vector if vector is True
+    :param projection2_params: Same as above. Both project world coordinates into image corresponding image coordinates
+    :param camera_intrinsic_matrix: The intrinsic properties of the camera used
+    :return: Nx3 array corresponding to the input points
+    """
+    # Convert to matrix form
+    rvec1, tvec1 = projection1_params
+    rvec2, tvec2 = projection2_params
+
+    rotation1, _ = cv2.Rodrigues(rvec1)
+    rotation2, _ = cv2.Rodrigues(rvec2)
+
+    extrinsic1 = np.hstack((rotation1, tvec1))
+    extrinsic2 = np.hstack((rotation2, tvec2))
+
+    projection1 = np.dot(camera_intrinsic_matrix, extrinsic1)
+    projection2 = np.dot(camera_intrinsic_matrix, extrinsic2)
+
+    new_points = cv2.triangulatePoints(projection1,
+                                       projection2,
+                                       matched_points[:, :2].T,
+                                       matched_points[:, 2:].T).T
+
+    new_points = new_points[:, :3] / new_points[:, -1][:, None]
+    return new_points
+
+
+def pointTracking(tracks, matches, points, prev_keyframe_ID, keyframe_ID):
     """
     Checks through the current tracks and updates them based on the provided matches
 
-    :param tracks: Current tracks
-    :param all_matches: A dictionary of the matches between the keyframe and all previous keyframes
+    :param tracks: Tracks of points visible in the previous keyframe
+    :param matches: Nx4 array of the matches between the keyframe and previous keyframe
+    :param points: Nx3 corresponding 3D points
+    :param prev_keyframe_ID: The identity number of the previous keyframe
     :param keyframe_ID: The identity number of the current keyframe
-    :return: The tracks to be processed,
-            Continuing tracks
+    :return: The tracks for the previous keyframe,
+            The tracks for the current keyframe,
+            The new tracks created
     """
-
     new_tracks = []
+    new_frame_tracks = []
 
-    for prev_keyframe_ID, matches in all_matches.items():
-        # For each match check if this feature already exists
-        for feature_point, correspondent in zip(matches[:, :2], matches[:, 2:]):
-            # Convert to tuples
-            feature_point = (feature_point[0], feature_point[1])
-            correspondent = (correspondent[0], correspondent[1])
+    # For each match check if this feature already exists
+    for feature_point, correspondent, point in zip(matches[:, :2], matches[:, 2:], points):
+        is_new_track = True
 
-            is_new_track = True
+        for track in tracks:
+            # If the current point matches the track's last point then they reference the same feature
+            prior_point = track.getCoordinate(prev_keyframe_ID)
 
-            for track in tracks:
-                # If the current point matches the track's last point then they reference the same feature
-                prior_points = track.get2DPoints()
+            # So update the track
+            if feature_point[0] == prior_point[0] and feature_point[1] == prior_point[1]:
+                track.update(keyframe_ID, correspondent, point)
+                new_frame_tracks.append(track)
+                is_new_track = False
+                break
 
-                # So update the track
-                if feature_point in prior_points:
-                    track.update(keyframe_ID, correspondent)
-                    is_new_track = False
-                    break
-
-            # Feature was not found elsewhere
-            if is_new_track:
-                new_track = Track(prev_keyframe_ID,
-                                  feature_point,
-                                  keyframe_ID,
-                                  correspondent)
-                new_tracks.append(new_track)
+        # Feature was not found elsewhere
+        if is_new_track:
+            new_track = Track(prev_keyframe_ID,
+                              feature_point,
+                              keyframe_ID,
+                              correspondent,
+                              point)
+            new_tracks.append(new_track)
+            new_frame_tracks.append(new_track)
 
     # Add new tracks
     tracks += new_tracks
 
-    return tracks
-
-
-def pathRecreations(extrinsic_matrices, last_ID):
-    """
-    Reconstructs the camera path in 3D space
-
-    :param extrinsic_matrices: A dictionary of dictionaries linking pairs of frames to an extrinsic matrix
-    :param last_ID: The last frame ID
-    :return: A list of extrinsic matrices for each successive frame
-    """
-    # Get the frames directly adjacent to the start frame
-    adjacent_frames = extrinsic_matrices.get(0)
-    new_adjacent_frames = adjacent_frames.copy()
-    updated = False
-    for frame_ID, extrinsic_matrix1 in adjacent_frames.items():
-        if frame_ID == last_ID:
-            continue
-
-        for next_frame_ID, extrinsic_matrix2 in extrinsic_matrices.get(frame_ID).items():
-            new_extrinsic_matrix = np.dot(extrinsic_matrix2, extrinsic_matrix1)
-
-            if next_frame_ID not in adjacent_frames:
-                updated = True
-                new_adjacent_frames[next_frame_ID] = new_extrinsic_matrix
-
-    if updated:
-        extrinsic_matrices[0] = new_adjacent_frames
-        return pathRecreations(extrinsic_matrices, last_ID)
-    else:
-        return list(new_adjacent_frames.values())
-
-
-def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
-    """
-    Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
-    frames link together
-
-    :param popped_tracks: The tracks that will not be updated again
-    :param projections: The poses of the frames so far
-    :param point_ID: The current 3D point identification number
-    :param points_2d: The 2D image points analysed so far
-    :param frame_indices: The index of the frame relating to each 2D point
-    :param point_indices: The index of the 3D point relating to each 2D point
-    :return: new 3D points,
-            new 3D point identification number,
-            new 2D point array
-            new frame index array
-            new 3D point index array
-    """
-    # Join together all the points and tracks for pairs of frames
-    frame_pairs = {}
-    for track in popped_tracks:
-        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
-        pair = [left, right]
-        identifier = str(frame_ID1) + "-" + str(frame_ID2)
-
-        if identifier in frame_pairs:
-            track_group, coordinates = frame_pairs.get(identifier)
-            track_group.append(track)
-            coordinates.append(pair)
-            frame_pairs[identifier] = (track_group, coordinates)
-        else:
-            track_group = [track]
-            coordinates = [pair]
-            frame_pairs[identifier] = (track_group, coordinates)
-
-    points = None
-    count = 0
-
-    # Triangulation
-    for identifier, (track_group, coordinates) in frame_pairs.items():
-        frames = identifier.split("-")
-        frame_ID1 = int(frames[0])
-        frame_ID2 = int(frames[1])
-
-        # Get poses
-        projection1 = projections[frame_ID1][:3, :]
-        projection2 = projections[frame_ID2][:3, :]
-
-        # Get coordinates
-        coordinates = np.array(coordinates)
-        left_points = coordinates[:, 0, :]
-        right_points = coordinates[:, 1, :]
-
-        # Triangulate points
-        new_points = cv2.triangulatePoints(projection1, projection2, left_points.T, right_points.T).T
-        new_points = new_points[:, :3] / new_points[:, 3][:, None]
-
-        # Manage bundling
-        for track, point in zip(track_group, new_points):
-            new_points_2d = track.get2DPoints()
-
-            for i, point_2d in enumerate(new_points_2d):
-                points_2d.append(point_2d)
-
-                if i == len(new_points_2d) - 1:
-                    # The last index must be frame_ID2 index
-                    # This is a problem for comparing the last frame to the first
-                    # As the first frame is 0 which cannot be reached with addition
-                    frame_indices.append(frame_ID2)
-                else:
-                    frame_indices.append(frame_ID1 + i)
-
-                point_indices.append(point_ID)
-
-            point_ID += 1
-            count += 1
-
-        if points is None:
-            points = new_points
-        else:
-            points = np.concatenate((points, new_points))
-
-    return points, point_ID, points_2d, frame_indices, point_indices
+    return tracks, new_frame_tracks, new_tracks
 
 
 def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, feature_params, flann_params):
@@ -502,6 +455,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     orb = cv2.ORB_create(nfeatures=2000)
 
     cap = cv2.VideoCapture(video)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Retrieve first frame
     _, start_frame = cap.read()
@@ -520,18 +474,14 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     all_descriptors = [descriptors]
 
     # Initialise pose estimation
-    left_frame_extrinsic_matrix = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-    extrinsic_matrices = {0: {0: left_frame_extrinsic_matrix}}
+    frame_tracks = {}
+
+    # Initialise triangulation
+    extrinsic_vectors = []
 
     # Initialise point tracking
     tracks = []
     keyframe_ID = 1
-
-    # Initialise bundling
-    points_2d = []
-    frame_indices = []
-    point_indices = []
-    point_ID = 0
 
     toc = time.time()
 
@@ -546,9 +496,6 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     success, frame = cap.read()
 
     while success:
-        # Whether the start frame is rejoined
-        has_joined = False
-
         frame = undistortFrame(frame, intrinsic_matrix, distortion_coefficients)
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
 
@@ -566,7 +513,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             features, descriptors = orb.detectAndCompute(frame_grey, None)
 
-            print("Found", len(features), "features")
+            print("found", len(features))
 
             # Calculate matches
             all_matches = featureMatching(features,
@@ -583,86 +530,95 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
             # Pose Assumption
             # Use openCV recoverPose to get a base assumption of the relative location of the first two frames
-            all_points_2D = {}
             if keyframe_ID == 1:
+                print("Finding inliers between first keyframes", end="...")
+
                 matches = all_matches[0]  # Get matches between this frame (frame 1) and the first frame (frame 0)
-                points, pairwise_extrinsic_matrix, projection = poseEstimation(matches[:, :2],
-                                                                               matches[:, 2:],
+                usable_matches, rvec, tvec, new_points = initialPoseEstimation(matches,
                                                                                intrinsic_matrix)
-                # TODO: remove
-                pair_extrinsic_matrices = extrinsic_matrices[0]
-                pair_extrinsic_matrices[1] = pairwise_extrinsic_matrix
-                extrinsic_matrices[0] = pair_extrinsic_matrices
-                all_points_2D[0] = points
+
+                # Convert origin to rotation and translation vectors
+                origin_rvec, _ = cv2.Rodrigues(np.eye(3, 3))
+                extrinsic_vectors.append((origin_rvec, np.array([[0], [0], [0]])))
+
+                extrinsic_vectors.append((rvec, tvec))
+
+                print("found", len(usable_matches[:, 0]))
+
+                # Create tracks for each of the new points
+                prev_tracks, new_frame_tracks, new_tracks = pointTracking([],
+                                                                          matches,
+                                                                          new_points,
+                                                                          0,
+                                                                          1)
+
+                frame_tracks[0] = prev_tracks
+                frame_tracks[1] = new_frame_tracks
+                tracks += new_tracks
             else:
+                # Find the position of the frame based on previous 3D points
+                solved, rvec, tvec = poseEstimation(all_matches,
+                                                    frame_tracks,
+                                                    intrinsic_matrix)
+
+                extrinsic_vectors.append((rvec, tvec))
+
                 for prev_keyframe_ID, matches in all_matches.items():
+                    # Triangulate all the matches (regardless of whether they have been triangulated before)
+                    new_points = triangulatePoints(matches,
+                                                   extrinsic_vectors[prev_keyframe_ID],
+                                                   (rvec, tvec),
+                                                   intrinsic_matrix)
 
-                    if matches.size == 0 or len(matches[:, 0]) < 8:  # Need at least 8 points
-                        continue
+                    # Group the newly traingulated points into tracks
+                    prev_tracks, new_frame_tracks, new_tracks = pointTracking(frame_tracks[prev_keyframe_ID],
+                                                                              matches,
+                                                                              new_points,
+                                                                              prev_keyframe_ID,
+                                                                              keyframe_ID)
 
-                    print("Finding inliers with keyframe", prev_keyframe_ID, end="...")
-
-                    points, pairwise_extrinsic_matrix, _ = poseEstimation(matches[:, :2],
-                                                                                   matches[:, 2:],
-                                                                                   intrinsic_matrix)
-
-                    if points is not None:
-                        # If the previous frame is already present add the new pairwise matrix
-                        if prev_keyframe_ID in extrinsic_matrices.keys():
-                            pairwise_extrinsic_matrices = extrinsic_matrices[prev_keyframe_ID]
-                            pairwise_extrinsic_matrices[keyframe_ID] = pairwise_extrinsic_matrix
-                            extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
-                        # Otherwise create a new entry
-                        else:
-                            pairwise_extrinsic_matrices = {keyframe_ID: pairwise_extrinsic_matrix}
-                            extrinsic_matrices[prev_keyframe_ID] = pairwise_extrinsic_matrices
-
-                        all_points_2D[prev_keyframe_ID] = points
-
-                        print("Found", len(points[:, 0]), "inliers")
-                    else:
-                        print("No inliers found")
-
-            # Manage tracks
-            print("Grouping new points", end="...")
-
-            tracks = pointTracking(tracks,
-                                   all_points_2D,
-                                   keyframe_ID)
-
-            print(len(tracks), "potential points")
-            print()
+                    frame_tracks[prev_keyframe_ID] = prev_tracks
+                    frame_tracks[keyframe_ID] = new_frame_tracks
+                    tracks += new_tracks
 
             # Update variables
             keyframe_ID += 1
 
         success, frame = cap.read()
 
-    linked_extrinsics = pathRecreations(extrinsic_matrices, keyframe_ID - 1)
-    linked_extrinsics = np.array(linked_extrinsics)
-    projections = np.einsum("ij,...jk", intrinsic_matrix, linked_extrinsics[:, :3])
-
-    # Include the points in the tracks not popped at the end
-    points, point_ID, points_2d, frame_indices, point_indices = managePoints(tracks,
-                                                                             np.array(projections),
-                                                                             point_ID,
-                                                                             points_2d,
-                                                                             frame_indices,
-                                                                             point_indices)
-
     toc = time.time()
 
-    print(len(points), "points found.")
-    print(len(projections), "frames used.")
+    print(len(tracks), "points found.")
+    print(len(extrinsic_vectors), "frames used.")
     print(toc - tic, "seconds.\n")
+
+    fig_before = go.Figure()
+
+    points = []
+    point_indices = []
+    frame_indices = []
+    points_2d = []
+    point_ID = 0
+
+    for track in tracks:
+        for frame_ID, coordinate in track.getCoordinates().items():
+            points_2d.append(coordinate)
+            frame_indices.append(frame_ID)
+            point_indices.append(point_ID)
+
+        points.append(track.getFinalPoint())
+        point_ID += 1
+
+    points = np.array(points)
 
     print("adjusting points...")
 
     tic = time.time()
 
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsics),
+    frame_parameters = np.array(extrinsic_vectors).reshape(len(extrinsic_vectors)*6,)
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(frame_parameters,
                                                                       intrinsic_matrix,
-                                                                      points,
+                                                                      np.array(points),
                                                                       np.array(points_2d),
                                                                       np.array(frame_indices),
                                                                       np.array(point_indices))
@@ -682,3 +638,7 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
         columns=['x', 'y', 'z']
     ))
     cloud.to_file(filename)
+
+    toc = time.time()
+
+    print(toc - tic, "seconds.\n")
