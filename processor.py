@@ -322,38 +322,6 @@ def poseEstimation(points, camera_intrinsic_matrix):
     return usable_points, R, t, usable_new_points
 
 
-def triangulatePoints(matched_points, projection1_params, projection2_params, camera_intrinsic_matrix):
-    """
-    Takes a Nx4 array of matched points and projection matrices returning the corresponding 3D points
-
-    :param matched_points: Nx4 array of image points [projection1, projection2]
-    :param projection1_params: Either 3x4 matrix or tuple of rotation vector and translation vector if vector is True
-    :param projection2_params: Same as above. Both project world coordinates into image corresponding image coordinates
-    :param camera_intrinsic_matrix: The intrinsic properties of the camera used
-    :return: Nx3 array corresponding to the input points
-    """
-    # Convert to matrix form
-    rvec1, tvec1 = projection1_params
-    rvec2, tvec2 = projection2_params
-
-    rotation1, _ = cv2.Rodrigues(rvec1)
-    rotation2, _ = cv2.Rodrigues(rvec2)
-
-    extrinsic1 = np.hstack((rotation1, tvec1))
-    extrinsic2 = np.hstack((rotation2, tvec2))
-
-    projection1 = np.dot(camera_intrinsic_matrix, extrinsic1)
-    projection2 = np.dot(camera_intrinsic_matrix, extrinsic2)
-
-    new_points = cv2.triangulatePoints(projection1,
-                                       projection2,
-                                       matched_points[:, :2].T,
-                                       matched_points[:, 2:].T).T
-
-    new_points = new_points[:, :3] / new_points[:, -1][:, None]
-    return new_points
-
-
 def pointTracking(tracks, matches, points, prev_keyframe_ID, keyframe_ID):
     """
     Checks through the current tracks and updates them based on the provided matches
