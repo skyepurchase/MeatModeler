@@ -27,24 +27,30 @@ def rotate(points, rot_vecs):
     return cos_theta * points + sin_theta * np.cross(v, points) + dot * (1 - cos_theta) * v
 
 
-def project(points, frame_params, extrinsic_vectors, camera_matrix):
+def project(points, translation_scalars, frame_extrinsic_matrices, frame_indices, camera_matrix):
     """
     Takes an array of 3D points and corresponding camera parameters and returns the re-projected 2D points
 
     :param points: Array of 3D points
-    :param frame_params: Array of frame parameters (rotation vectors, translation vectors, intrinsic properties)
-    :param extrinsic_vectors: Nx6 array of rotation and translation vectors for each frame
+    :param translation_scalars: Array of floats to scale the translation of each extrinsic matrix
+    :param frame_extrinsic_matrices: Array of 4x4 extrinsic matrices for each frame
+    :param frame_indices: Array of which frame corresponds to which 3D point
     :param camera_matrix: intrinsic camera matrix
     :return: Array of 2D projected points
     """
+    # Create the pairwise extrinsic matrices based on the scalars
+    new_translations = translation_scalars * frame_extrinsic_matrices[:, :, -1]
+    new_extrinsics = np.hstack((frame_extrinsic_matrices[:, :, :3], new_translations))
+
+    # Create the projection matrices
+    absolute_extrinsics = np.multiply.accumulate(new_extrinsics)
+    projections = np.einsum("...ij,...jk", camera_matrix, absolute_extrinsics[:, :3, :])
+
+    # Create the array projection matrices for each point
+    point_projections = projections[frame_indices]
+
     # Rotate points
-    points_proj = rotate(points, extrinsic_vectors[:, :3])
-
-    # Translate points (including the scaling which is determined by least_squares)
-    points_proj += frame_params * extrinsic_vectors[:, 3:6]
-
-    # Convert to world coordinates
-    points_proj = np.einsum("ij,...j", camera_matrix, points_proj)
+    points_proj = np.einsum("...ij,...j", point_projections, points)
 
     # Normalise points
     points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
@@ -78,13 +84,13 @@ def pointAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     return A
 
 
-def pointFun(parameters, extrinsic_vectors, camera_matrix, n_points, frame_indices, point_indices, points_2D):
+def pointFun(parameters, frame_extrinsic_matrices, camera_matrix, n_points, frame_indices, point_indices, points_2D):
     """
     Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
     the error
 
     :param parameters: Array of frame translation scalars followed by 3D points contiguously
-    :param extrinsic_vectors: Nx6 array of rotation and translation vectors for each frame
+    :param frame_extrinsic_matrices: Array of 4x4 extrinsic matrices
     :param camera_matrix: Camera intrinsic matrix
     :param n_points: The number of 3D points
     :param frame_indices: Array of frame indices to 2D point array
@@ -93,12 +99,16 @@ def pointFun(parameters, extrinsic_vectors, camera_matrix, n_points, frame_indic
     :return: The difference between the 2D points and projected 3D points
     """
     # Retrieve data
-    n_frames = len(extrinsic_vectors)
-    frame_params = parameters[:n_frames].reshape((n_frames, 1))
+    n_frames = len(frame_extrinsic_matrices)
+    translation_scalars = parameters[:n_frames].reshape((n_frames, 1))
     points_3D = parameters[n_frames:].reshape((n_points, 3))
 
     # Project points
-    points_proj = project(points_3D[point_indices], frame_params[frame_indices], extrinsic_vectors, camera_matrix)
+    points_proj = project(points_3D[point_indices],
+                          translation_scalars,
+                          frame_extrinsic_matrices,
+                          frame_indices,
+                          camera_matrix)
 
     return (points_proj - points_2D).ravel()
 
@@ -183,11 +193,11 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                         x_scale='jac',
                         ftol=1e-4,
                         method='trf',
-                        args=(extrinsic_vectors,
+                        args=(frame_extrinsic_matrices,
                               camera_intrinsic_matrix,
                               len(points_3D),
                               frame_indices,
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, len(frame_parameters), len(points_3D))
+    return reformatPointResult(res, extrinsic_vectors, len(points_3D))
