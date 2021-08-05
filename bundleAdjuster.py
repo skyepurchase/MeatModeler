@@ -1,6 +1,27 @@
+import itertools
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
+
+
+def absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices):
+    """
+    Converts unit length extrinsic matrices to absolute extrinsic matrices based on scalars
+
+    :param translation_scalars: N array of integer scalars to scale the translation element
+    :param frame_extrinsic_matrices: Nx4x4 array of extrinsic matrices corresponding to the scalars
+    :return: Nx4x4 absolute matrices
+    """
+    # Scale translation
+    new_translations = translation_scalars * frame_extrinsic_matrices[:, :, -1]
+
+    # Remake extrinsic matrices
+    new_extrinsics = np.concatenate((frame_extrinsic_matrices[:, :, :3],
+                                     new_translations.reshape(len(frame_extrinsic_matrices), 4, 1)),
+                                    axis=2)
+
+    # Accumulate the extrinsics from pairwise to absolute
+    return np.array(list(itertools.accumulate(new_extrinsics, lambda x, y: np.dot(x, y))))
 
 
 def project(points, translation_scalars, frame_extrinsic_matrices, frame_indices, camera_matrix):
@@ -15,21 +36,18 @@ def project(points, translation_scalars, frame_extrinsic_matrices, frame_indices
     :return: Array of 2D projected points
     """
     # Create the pairwise extrinsic matrices based on the scalars
-    new_translations = translation_scalars * frame_extrinsic_matrices[:, :, -1]
-    new_extrinsics = np.hstack((frame_extrinsic_matrices[:, :, :3], new_translations))
-
-    # Create the projection matrices
-    absolute_extrinsics = np.multiply.accumulate(new_extrinsics)
+    absolute_extrinsics = absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices)
     projections = np.einsum("...ij,...jk", camera_matrix, absolute_extrinsics[:, :3, :])
 
     # Create the array projection matrices for each point
     point_projections = projections[frame_indices]
 
     # Rotate points
-    points_proj = np.einsum("...ij,...j", point_projections, points)
+    points_proj = np.einsum("...ij,...j", point_projections[:, :, :3], points)
+    points_proj += point_projections[:, :, -1]
 
     # Normalise points
-    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
+    points_proj = -points_proj[:, :2] / points_proj[:, -1, np.newaxis]
 
     return points_proj
 
@@ -103,11 +121,7 @@ def reformatPointResult(result, frame_extrinsic_matrices, n_points):
 
     points = result.x[n_frames:].reshape((n_points, 3))
     translation_scalars = result.x[:n_frames].reshape((n_frames, 1))
-
-    # Create the extrinsic matrices based on the scalars
-    new_translations = translation_scalars * frame_extrinsic_matrices[:, :, -1]
-    new_extrinsics = np.hstack((frame_extrinsic_matrices[:, :, :3], new_translations))
-    absolute_extrinsics = np.multiply.accumulate(new_extrinsics)
+    absolute_extrinsics = absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices)
 
     # Calculate frame positions
     rotations = np.linalg.inv(absolute_extrinsics[:, :3, :3])
