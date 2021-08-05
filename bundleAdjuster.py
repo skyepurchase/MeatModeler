@@ -157,6 +157,7 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                         verbose=2,
                         x_scale='jac',
                         ftol=1e-4,
+                        xtol=1e-4,
                         method='trf',
                         args=(frame_extrinsic_matrices,
                               camera_intrinsic_matrix,
