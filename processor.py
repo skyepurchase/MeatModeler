@@ -377,7 +377,7 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
+def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
@@ -431,7 +431,7 @@ def managePoints(popped_tracks, projections, point_ID, points_2d, frame_indices,
 
         # Triangulate points
         new_points = cv2.triangulatePoints(projection1, projection2, left_points.T, right_points.T).T
-        new_points = new_points[:, :3] / new_points[:, 3][:, None]
+        new_points = new_points[:, :3] / new_points[:, -1, np.newaxis]
 
         # Manage bundling
         for track, point in zip(track_group, new_points):
@@ -579,12 +579,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
 
     # Include the points in the tracks not popped at the end
     print("Triangulating points", end="...")
-    points, point_ID, points_2d, frame_indices, point_indices = managePoints(popped_tracks,
-                                                                             projections,
-                                                                             point_ID,
-                                                                             points_2d,
-                                                                             frame_indices,
-                                                                             point_indices)
+    points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(popped_tracks,
+                                                                                  projections,
+                                                                                  point_ID,
+                                                                                  points_2d,
+                                                                                  frame_indices,
+                                                                                  point_indices)
     print("done")
 
     toc = time.time()
