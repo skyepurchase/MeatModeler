@@ -471,10 +471,12 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     point_ID = 0
 
     toc = time.time()
+
     print("Initialisation complete.")
     print(toc - tic, "seconds.\n")
 
     print("Finding points...")
+
     tic = time.time()
 
     # Processing loop
@@ -543,7 +545,8 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     print("done")
 
     toc = time.time()
-    print(len(points), "points found.")
+
+    print(len(tracks), "points found.")
     print(toc - tic, "seconds.\n")
 
     print("adjusting points...")

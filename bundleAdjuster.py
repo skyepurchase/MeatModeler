@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
-import matplotlib.pyplot as plt
 
 
 def rotate(points, rot_vecs):
