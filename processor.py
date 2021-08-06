@@ -72,54 +72,6 @@ def calibrate(images, corner_dims=(7, 7)):
     return None
 
 
-def intrinsicFromEXIF(image):
-    """
-    Generates an intrinsic matrix based on the EXIF data of an image.
-    A number of assumptions are used and no distortion coefficients can be generated.
-    The intrinsic matrix will now be in real world coordinates.
-
-    :param image: The path to an image taken from the used phone
-    :return: The intrinsic matrix
-    """
-
-    # Extract EXIF data
-    tags = {}
-    with open(image, 'rb') as image_file:
-        img = Image.open(image_file)
-        if hasattr(img, '_getexif'):
-            exif_info = img._getexif()
-            if exif_info is not None:
-                for tag, value in exif_info.items():
-                    tags[ExifTags.TAGS.get(tag, tag)] = value
-
-    # Extract focal length
-    focal_length = tags.get('FocalLength', (0, 1))
-
-    # Extract resolution
-    img_width = tags.get('XResolution', 0)
-    img_height = tags.get('YResolution', 0)
-    if img_width < img_height:
-        img_width, img_height = img_height, img_width
-
-    # Extract DPI resolutions
-    f_planeN_X, f_planeD_X = tags.get('FocalPlaneXResolution', (0, 1))
-    f_planeN_Y, f_planeD_Y = tags.get('FocalPlaneYResolution', (0, 1))
-    X_resolution = f_planeN_X / f_planeD_X
-    Y_resolution = f_planeN_Y / f_planeD_Y
-
-    # focal length is in mm, resolution in px / "
-    # fx and fy in px
-    fx = focal_length * X_resolution / 25.4
-    fy = focal_length * Y_resolution / 25.4
-
-    # Assume the principle point is at the centre
-    cx, cy = (img_width / 2, img_height / 2)
-
-    return np.hstack((np.array([fx, 0, cx]),
-                      np.array([0, fy, cy]),
-                      np.array([0, 0, 1])))
-
-
 def undistortFrame(frame, camera_matrix, distortion_coefficients):
     """
     Takes a frame and removes the distortion cause by the camera
