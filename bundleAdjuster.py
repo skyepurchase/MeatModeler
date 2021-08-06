@@ -1,53 +1,53 @@
-import itertools
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
+import matplotlib.pyplot as plt
 
 
-def absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices):
+def rotate(points, rot_vecs):
     """
-    Converts unit length extrinsic matrices to absolute extrinsic matrices based on scalars
+    Takes an array of 3D points and an array of camera rotation vectors and returns the rotated points
 
-    :param translation_scalars: N array of integer scalars to scale the translation element
-    :param frame_extrinsic_matrices: Nx4x4 array of extrinsic matrices corresponding to the scalars
-    :return: Nx4x4 absolute matrices
+    :param points: Array of 3D points
+    :param rot_vecs: Array of Euler-Rodrigues rotation vectors
+    :return: Array of 3D points
     """
-    # Scale translation
-    new_translations = translation_scalars * frame_extrinsic_matrices[:, :, -1]
+    # The angle of rotation is the magnitude of the rotation vectors
+    theta = np.linalg.norm(rot_vecs, axis=1)[:, np.newaxis]
 
-    # Remake extrinsic matrices
-    new_extrinsics = np.concatenate((frame_extrinsic_matrices[:, :, :3],
-                                     new_translations.reshape(len(frame_extrinsic_matrices), 4, 1)),
-                                    axis=2)
+    # Normalising vectors
+    with np.errstate(invalid='ignore'):
+        v = rot_vecs / theta
+        v = np.nan_to_num(v)
 
-    # Accumulate the extrinsics from pairwise to absolute
-    return np.array(list(itertools.accumulate(new_extrinsics, lambda x, y: np.dot(x, y))))
+    # Rodrigues method for rotation
+    dot = np.sum(points * v, axis=1)[:, np.newaxis]
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
+
+    return cos_theta * points + sin_theta * np.cross(v, points) + dot * (1 - cos_theta) * v
 
 
-def project(points, translation_scalars, frame_extrinsic_matrices, frame_indices, camera_matrix):
+def project(points, frame_params, camera_matrix):
     """
     Takes an array of 3D points and corresponding camera parameters and returns the re-projected 2D points
 
     :param points: Array of 3D points
-    :param translation_scalars: Array of floats to scale the translation of each extrinsic matrix
-    :param frame_extrinsic_matrices: Array of 4x4 extrinsic matrices for each frame
-    :param frame_indices: Array of which frame corresponds to which 3D point
+    :param frame_params: Array of frame parameters (rotation vectors, translation vectors, intrinsic properties)
     :param camera_matrix: intrinsic camera matrix
     :return: Array of 2D projected points
     """
-    # Create the pairwise extrinsic matrices based on the scalars
-    absolute_extrinsics = absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices)
-    projections = np.einsum("...ij,...jk", camera_matrix, absolute_extrinsics[:, :3, :])
-
-    # Create the array projection matrices for each point
-    point_projections = projections[frame_indices]
-
     # Rotate points
-    points_proj = np.einsum("...ij,...j", point_projections[:, :, :3], points)
-    points_proj += point_projections[:, :, -1]
+    points_proj = rotate(points, frame_params[:, :3])
+
+    # Translate points
+    points_proj += frame_params[:, 3:6]
+
+    # Convert to world coordinates
+    points_proj = np.einsum("ij,...j", camera_matrix, points_proj)
 
     # Normalise points
-    points_proj = -points_proj[:, :2] / points_proj[:, -1, np.newaxis]
+    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
 
     return points_proj
 
@@ -63,29 +63,29 @@ def pointAdjustmentSparsity(n_frames, n_points, frame_indices, point_indices):
     :return: Sparse Jacobian matrix
     """
     m = frame_indices.size * 2
-    n = n_frames + n_points * 3
+    n = n_frames * 6 + n_points * 3
     A = lil_matrix((m, n), dtype=int)
 
     i = np.arange(frame_indices.size)
-    for s in range(1):
-        A[2 * i, frame_indices + s] = 1
-        A[2 * i + 1, frame_indices + s] = 1
+    for s in range(6):
+        A[2 * i, frame_indices * 6 + s] = 1
+        A[2 * i + 1, frame_indices * 6 + s] = 1
 
     for s in range(3):
-        A[2 * i, n_frames + point_indices * 3 + s] = 1
-        A[2 * i + 1, n_frames + point_indices * 3 + s] = 1
+        A[2 * i, n_frames * 6 + point_indices * 3 + s] = 1
+        A[2 * i + 1, n_frames * 6 + point_indices * 3 + s] = 1
 
     return A
 
 
-def pointFun(parameters, frame_extrinsic_matrices, camera_matrix, n_points, frame_indices, point_indices, points_2D):
+def pointFun(parameters, camera_matrix, n_frames, n_points, frame_indices, point_indices, points_2D):
     """
     Takes a group of frame parameters and 3D points corresponding to original image 2D points and returns an array of
     the error
 
-    :param parameters: Array of frame translation scalars followed by 3D points contiguously
-    :param frame_extrinsic_matrices: Array of 4x4 extrinsic matrices
+    :param parameters: Array of frame parameters followed by 3D points contiguously
     :param camera_matrix: Camera intrinsic matrix
+    :param n_frames: The number of frames
     :param n_points: The number of 3D points
     :param frame_indices: Array of frame indices to 2D point array
     :param point_indices: Array of 3D point indices to 2D point array
@@ -93,41 +93,68 @@ def pointFun(parameters, frame_extrinsic_matrices, camera_matrix, n_points, fram
     :return: The difference between the 2D points and projected 3D points
     """
     # Retrieve data
-    n_frames = len(frame_extrinsic_matrices)
-    translation_scalars = parameters[:n_frames].reshape((n_frames, 1))
-    points_3D = parameters[n_frames:].reshape((n_points, 3))
+    frame_params = parameters[:n_frames * 6].reshape((n_frames, 6))
+    points_3D = parameters[n_frames * 6:].reshape((n_points, 3))
 
     # Project points
-    points_proj = project(points_3D[point_indices],
-                          translation_scalars,
-                          frame_extrinsic_matrices,
-                          frame_indices,
-                          camera_matrix)
+    points_proj = project(points_3D[point_indices], frame_params[frame_indices], camera_matrix)
 
     return (points_proj - points_2D).ravel()
 
 
-def reformatPointResult(result, frame_extrinsic_matrices, n_points):
+def frameParameters(frame_extrinsic_matrices):
+    """
+    Converts 4x4 extrinsic matrices into 2 contiguous row vectors using Euler-Rodrigues rotation vectors
+
+    :param frame_extrinsic_matrices: An array of 4x4 extrinsic matrices fro each frame
+    :return: An array of rotation and translation vectors
+    """
+    # Converting array of projection matrices into an array rotation vectors and translation vectors
+    # Creating the transposed translation vector array
+    translation_vectors = frame_extrinsic_matrices[:, :3, 3]
+
+    # Finding the matrix of rotation Euler angles
+    theta = np.arccos((frame_extrinsic_matrices[:, 0, 0] +
+                       frame_extrinsic_matrices[:, 1, 1] +
+                       frame_extrinsic_matrices[:, 2, 2] - 1) / 2)
+    sin_theta = np.sin(theta)
+
+    # Finding the matrix of transposed unit vectors of rotation
+    with np.errstate(invalid='ignore'):
+        rotation_vectors_x = (frame_extrinsic_matrices[:, 2, 1] - frame_extrinsic_matrices[:, 1, 2]) / (2 * sin_theta)
+        rotation_vectors_y = (frame_extrinsic_matrices[:, 0, 2] - frame_extrinsic_matrices[:, 2, 0]) / (2 * sin_theta)
+        rotation_vectors_z = (frame_extrinsic_matrices[:, 1, 0] - frame_extrinsic_matrices[:, 0, 1]) / (2 * sin_theta)
+
+        rotation_vectors = np.vstack((rotation_vectors_x, rotation_vectors_y, rotation_vectors_z)).T
+
+        # Scaling the unit vectors by the size of the angle
+        rotation_vectors = np.nan_to_num(rotation_vectors) * np.expand_dims(theta, axis=1)
+
+    # Matrix of the individual frame parameters
+    return np.hstack((rotation_vectors, translation_vectors)).reshape((len(frame_extrinsic_matrices) * 6,))
+
+
+def reformatPointResult(result, n_frames, n_points, point_indices):
     """
     Converts the new calculated points, camera rotations and translations into usable arrays
 
     :param result: Least squares regression result
-    :param frame_extrinsic_matrices: Array of 4x4 extrinsic matrices for each frame
+    :param n_frames: The number of frames
     :param n_points: The number of points
+    :param point_indices: An array of which 3D point corresponds to which 2D error
     :return: a 3D cartesian point array,
             a 3D cartesian frame position array
     """
-    n_frames = len(frame_extrinsic_matrices)
+    costs = result.fun[np.arange(0, len(result.fun)) % 2 == 0]
+    points = result.x[n_frames * 6:].reshape((n_points, 3))
+    point_cost = np.array([np.average(np.square(costs[point_indices == i])) for i in range(n_points)])
+    points = points[point_cost < 10]
 
-    points = result.x[n_frames:].reshape((n_points, 3))
-    translation_scalars = result.x[:n_frames].reshape((n_frames, 1))
-    absolute_extrinsics = absoluteExtrinsics(translation_scalars, frame_extrinsic_matrices)
+    frames = result.x[:n_frames * 6].reshape((n_frames, 6))
 
-    # Calculate frame positions
-    rotations = np.linalg.inv(absolute_extrinsics[:, :3, :3])
-    translations = -absolute_extrinsics[:, :3, -1] * translation_scalars
-    positions = np.einsum("...ij,...j", rotations, translations)
-
+    rotations = -frames[:, :3]
+    translations = -frames[:, 3:]
+    positions = rotate(translations, rotations)
     return points, positions
 
 
@@ -143,27 +170,26 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
     :param point_indices: The 3D point corresponding to each 2D point
     :return: New 3D points from improved projections
     """
-    frame_parameters = np.repeat([1], len(frame_extrinsic_matrices))
+    frame_parameters = frameParameters(frame_extrinsic_matrices)
 
     # Concatenating frame parameters and 3D points
-    parameters = np.concatenate((frame_parameters,
-                                 points_3D.reshape((len(points_3D) * 3,))))
+    parameters = np.hstack((frame_parameters,
+                            points_3D.reshape((len(points_3D) * 3,))))
 
     # Applying least squares to find the optimal projections and hence 3D points
-    A = pointAdjustmentSparsity(len(frame_parameters), len(points_3D), frame_indices, point_indices)
+    A = pointAdjustmentSparsity(len(frame_extrinsic_matrices), len(points_3D), frame_indices, point_indices)
     res = least_squares(pointFun,
                         parameters,
                         jac_sparsity=A,
                         verbose=2,
                         x_scale='jac',
                         ftol=1e-4,
-                        xtol=1e-4,
                         method='trf',
-                        args=(frame_extrinsic_matrices,
-                              camera_intrinsic_matrix,
+                        args=(camera_intrinsic_matrix,
+                              len(frame_extrinsic_matrices),
                               len(points_3D),
                               frame_indices,
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, frame_extrinsic_matrices, len(points_3D))
+    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D), point_indices)

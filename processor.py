@@ -549,7 +549,9 @@ def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, f
     print("adjusting points...")
     tic = time.time()
 
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+    extrinsics = np.array(extrinsic_matrices)
+    extrinsics = np.array(list(itertools.accumulate(extrinsics, lambda n, m: np.dot(n, m))))
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(extrinsics,
                                                                       intrinsic_matrix,
                                                                       points,
                                                                       np.array(points_2d),
