@@ -1,6 +1,7 @@
 import time
 
 import cv2
+import itertools
 import numpy as np
 import pandas as pd
 from pyntcloud import PyntCloud
@@ -416,14 +417,13 @@ def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_ind
     return points, point_ID, points_2d, frame_indices, point_indices
 
 
-def process(video, path, intrinsic_matrix, distortion_coefficients, lk_params, feature_params, flann_params):
+def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
 
     :param video: The video to be converted to a 3D mesh
     :param path: The path to save images to
     :param intrinsic_matrix: The intrinsic matrix for the video camera used
-    :param distortion_coefficients: The disrotion coefficients for the video camera used
     :param lk_params: Lucas-Kanade feature tracking parameters
     :param feature_params: OpenCV GoodFeaturesToTrack parameters
     :param flann_params: FLANN feature matching parameters
