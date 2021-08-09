@@ -304,7 +304,7 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
 
         for track in tracks:
             # If the current point matches the track's last point then they reference the same feature
-            prior_point = track.getLastPoint()
+            prior_point = track.getFinalPoint()
 
             # So update the track
             if feature_point == prior_point:
@@ -546,7 +546,8 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     toc = time.time()
 
-    print(len(tracks), "points found.")
+    print(points_2d)
+    print(len(points), "points found.")
     print(toc - tic, "seconds.\n")
 
     print("adjusting points...")

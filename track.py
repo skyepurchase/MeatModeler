@@ -1,5 +1,5 @@
 class Track:
-    def __init__(self, prev_frame_ID, feature, frame_ID, correspondent, point):
+    def __init__(self, prev_frame_ID, feature, frame_ID, correspondent, point=None):
         """
         tracks a 3D point through different frames
 
@@ -12,10 +12,25 @@ class Track:
         self.coordinates = {prev_frame_ID: feature,
                             frame_ID: correspondent}
         self.points = [point]
+        self.updated = True
 
-    def update(self, frame_ID, correspondent, point):
+    def reset(self):
+        self.updated = False
+
+    def wasUpdated(self):
+        return self.updated
+
+    def getTriangulationData(self):
+        keys = list(self.coordinates.keys())
+        return keys[0], keys[-1], self.coordinates.get(keys[0]), self.coordinates.get(keys[-1])
+
+    def get2DPoints(self):
+        return list(self.coordinates.values())
+
+    def update(self, frame_ID, correspondent, point=None):
         self.coordinates[frame_ID] = correspondent
         self.points.append(point)
+        self.updated = True
 
     def getCoordinate(self, frame_ID):
         return self.coordinates.get(frame_ID)
