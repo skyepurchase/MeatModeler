@@ -433,10 +433,10 @@ def process(video, lk_params, feature_params, flann_params):
     projections = np.einsum("ij,...jk", intrinsic_matrix, extrinsics)
     print("done\n\n")
 
-    positions = bundleAdjuster.rotate(-np.array(tvecs).reshape((len(tvecs), 1, 3)),
-                                      -np.array(rvecs).reshape((len(rvecs), 1, 3))).reshape((len(rvecs), 3))
-    looking_at = bundleAdjuster.rotate(np.repeat([[0, 0, 1]], len(rvecs)).reshape(len(rvecs), 1, 3),
-                                       -np.array(rvecs).reshape((len(rvecs), 1, 3))).reshape((len(rvecs)), 3)
+    positions = bundleAdjuster.rotate(-np.array(tvecs).reshape((len(tvecs), 3)),
+                                      -np.array(rvecs).reshape((len(rvecs), 3))).reshape((len(rvecs), 3))
+    looking_at = bundleAdjuster.rotate(np.repeat([[0, 0, 1]], len(rvecs)).reshape(len(rvecs), 3),
+                                       -np.array(rvecs).reshape((len(rvecs), 3))).reshape((len(rvecs)), 3)
 
     fig = go.Figure()
     positions = np.array(positions)
