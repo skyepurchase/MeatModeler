@@ -141,51 +141,6 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return left_matches, right_matches, new_points, new_descriptors
 
 
-def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_matrix, camera_intrinsic_matrix):
-    """
-    Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
-    the transformation between origin and right frame coordinates
-
-    :param left_frame_points: Undistorted matched points from the left frame
-    :param right_frame_points: Undistorted matched points from the right frame
-    :param left_frame_extrinsic_matrix: 4x4 matrix converting origin coordinates to left frame coordinates
-    :param camera_intrinsic_matrix: The intrinsic matrix of the camera
-    :return: The used left points,
-            The used right points,
-            The corresponding 3D points,
-            The new previous pose matrix
-    """
-    # Find essential matrix and inliers
-    essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
-                                                    right_frame_points,
-                                                    camera_intrinsic_matrix)
-
-    # Use the essential matrix and inliers to find the pose and new inliers
-    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_matrix,
-                                                                   left_frame_points,
-                                                                   right_frame_points,
-                                                                   camera_intrinsic_matrix,
-                                                                   mask=mask_E)
-
-    # Create the 4x3 pose matrix from rotation and translation
-    left_to_right_extrinsic_matrix = np.hstack([R_left_to_right, t_left_to_right])
-
-    # Convert to homogeneous 4x4 transformation matrix
-    left_to_right_extrinsic_matrix = np.vstack((left_to_right_extrinsic_matrix, np.array([0, 0, 0, 1])))
-
-    # Take world coordinates to left frame then to right frame
-    right_frame_extrinsic_matrix = np.matmul(left_to_right_extrinsic_matrix, left_frame_extrinsic_matrix)
-
-    # Projection from world coordinates to right frame image coordinates
-    projection_matrix = np.dot(camera_intrinsic_matrix, right_frame_extrinsic_matrix[:3])
-
-    # Usable points
-    usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
-    usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
-
-    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, left_to_right_extrinsic_matrix, projection_matrix
-
-
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
     """
     Checks through the current tracks and updates them based on the provided matches
@@ -480,23 +435,33 @@ def process(video, lk_params, feature_params, flann_params):
 
     positions = bundleAdjuster.rotate(-np.array(tvecs).reshape((len(tvecs), 1, 3)),
                                       -np.array(rvecs).reshape((len(rvecs), 1, 3))).reshape((len(rvecs), 3))
+    looking_at = bundleAdjuster.rotate(np.repeat([[0, 0, 1]], len(rvecs)).reshape(len(rvecs), 1, 3),
+                                       -np.array(rvecs).reshape((len(rvecs), 1, 3))).reshape((len(rvecs)), 3)
 
     fig = go.Figure()
     positions = np.array(positions)
 
     fig.add_trace(go.Scatter3d(x=positions[:, 0],
-                               y=positions[:, 1],
-                               z=positions[:, 2],
+                               y=positions[:, 2],
+                               z=positions[:, 1],
                                mode="text+lines+markers",
                                name="Camera positions",
                                textposition="top center",
                                text=[str(i) for i in range(len(positions))]))
 
     fig.add_trace(go.Scatter3d(x=calibration_objp[:, 0],
-                               y=calibration_objp[:, 1],
-                               z=calibration_objp[:, 2],
+                               y=calibration_objp[:, 2],
+                               z=calibration_objp[:, 1],
                                mode="text+lines+markers",
                                name="Chessboard positions",
+                               textposition="top center",
+                               text=[str(i) for i in range(len(calibration_objp))]))
+
+    fig.add_trace(go.Scatter3d(x=looking_at[:, 0] + positions[:, 0],
+                               y=looking_at[:, 2] + positions[:, 2],
+                               z=looking_at[:, 1] + positions[:, 1],
+                               mode="text+markers",
+                               name="Looking_at",
                                textposition="top center",
                                text=[str(i) for i in range(len(positions))]))
 
