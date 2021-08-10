@@ -243,8 +243,8 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
     :param camera_intrinsic_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
-            The corresponding 3D points,
-            The new previous pose matrix
+            The right frame extrinsic matrix,
+            The right frame projection matrix
     """
     # Find essential matrix and inliers
     essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
@@ -274,7 +274,7 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
     usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
     usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, left_to_right_extrinsic_matrix, projection_matrix
+    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, projection_matrix
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -368,7 +368,6 @@ def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_ind
             frame_pairs[identifier] = (track_group, coordinates)
 
     points = None
-    count = 0
 
     # Triangulation
     for identifier, (track_group, coordinates) in frame_pairs.items():
@@ -407,7 +406,6 @@ def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_ind
                 point_indices.append(point_ID)
 
             point_ID += 1
-            count += 1
 
         if points is None:
             points = new_points
@@ -505,14 +503,14 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
             # Pose estimation
             print("Finding inliers", end="...")
-            L_points, R_points, right_extrinsic, pairwise_extrinsic, projection = poseEstimation(L_matches,
-                                                                                                 R_matches,
-                                                                                                 left_extrinsic,
-                                                                                                 intrinsic_matrix)
+            L_points, R_points, right_extrinsic, projection = poseEstimation(L_matches,
+                                                                             R_matches,
+                                                                             left_extrinsic,
+                                                                             intrinsic_matrix)
             print("found", len(L_points))
 
             projections.append(projection)
-            extrinsic_matrices.append(pairwise_extrinsic)
+            extrinsic_matrices.append(right_extrinsic)
 
             # Manage tracks
             print("Grouping points", end="...")
