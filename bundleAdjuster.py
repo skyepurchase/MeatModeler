@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
@@ -133,7 +134,13 @@ def frameParameters(frame_extrinsic_matrices):
     return np.hstack((rotation_vectors, translation_vectors)).reshape((len(frame_extrinsic_matrices) * 6,))
 
 
-def reformatPointResult(result, n_frames, n_points, point_indices):
+def skew(rotation):
+    return np.array([[0, -rotation[2], rotation[1]],
+                     [rotation[2], 0, -rotation[0]],
+                     [-rotation[1], rotation[0], 0]])
+
+
+def reformatPointResult(result, n_frames, n_points):
     """
     Converts the new calculated points, camera rotations and translations into usable arrays
 
@@ -144,17 +151,18 @@ def reformatPointResult(result, n_frames, n_points, point_indices):
     :return: a 3D cartesian point array,
             a 3D cartesian frame position array
     """
-    costs = result.fun[np.arange(0, len(result.fun)) % 2 == 0]
     points = result.x[n_frames * 6:].reshape((n_points, 3))
-    point_cost = np.array([np.average(np.square(costs[point_indices == i])) for i in range(n_points)])
-    points = points[point_cost < 10]
 
     frames = result.x[:n_frames * 6].reshape((n_frames, 6))
 
-    rotations = -frames[:, :3]
-    translations = -frames[:, 3:]
-    positions = rotate(translations, rotations)
-    return points, positions
+    rvecs = frames[:, :3]
+    tvecs = frames[:, 3:]
+
+    extrinsics = [np.vstack((np.hstack((cv2.Rodrigues(rvec)[0], tvec.reshape(3, 1))),
+                             [0, 0, 0, 1]))
+                  for rvec, tvec in zip(rvecs, tvecs)]
+
+    return points, extrinsics
 
 
 def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
@@ -191,4 +199,4 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D), point_indices)
+    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D))
