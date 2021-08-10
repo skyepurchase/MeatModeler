@@ -520,7 +520,17 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                                                       keyframe_ID,
                                                       R_points)
             popped_tracks += new_popped_tracks
-            print(len(popped_tracks), "potential points")
+            print(len(popped_tracks) + len(tracks), "potential points")
+
+            # Triangulating points
+            print("Triangulating points", end="...")
+            points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(tracks,
+                                                                                          projections,
+                                                                                          0,
+                                                                                          [],
+                                                                                          [],
+                                                                                          [])
+            print(len(points), "triangulated")
 
             # Update variables
             left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
