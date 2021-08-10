@@ -1,7 +1,6 @@
 import time
 
 import cv2
-import itertools
 import numpy as np
 import pandas as pd
 from pyntcloud import PyntCloud
@@ -333,23 +332,24 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
+def triangulatePoints(popped_tracks, projections):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
 
     :param popped_tracks: The tracks that will not be updated again
     :param projections: The poses of the frames so far
-    :param point_ID: The current 3D point identification number
-    :param points_2d: The 2D image points analysed so far
-    :param frame_indices: The index of the frame relating to each 2D point
-    :param point_indices: The index of the 3D point relating to each 2D point
     :return: new 3D points,
             new 3D point identification number,
             new 2D point array
             new frame index array
             new 3D point index array
     """
+    point_ID = 0
+    points_2d = []
+    frame_indices = []
+    point_indices = []
+
     # Join together all the points and tracks for pairs of frames
     frame_pairs = {}
     for track in popped_tracks:
@@ -462,12 +462,6 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     prev_keyframe_ID = 0
     keyframe_ID = 1
 
-    # Initialise bundling
-    points_2d = []
-    frame_indices = []
-    point_indices = []
-    point_ID = 0
-
     toc = time.time()
 
     print("Initialisation complete.")
@@ -525,11 +519,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
             # Triangulating points
             print("Triangulating points", end="...")
             points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(tracks,
-                                                                                          projections,
-                                                                                          0,
-                                                                                          [],
-                                                                                          [],
-                                                                                          [])
+                                                                                          projections)
             print(len(points), "triangulated")
 
             # Update variables
@@ -545,25 +535,19 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     # Include the points in the tracks not popped at the end
     print("Triangulating points", end="...")
     points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(popped_tracks,
-                                                                                  projections,
-                                                                                  point_ID,
-                                                                                  points_2d,
-                                                                                  frame_indices,
-                                                                                  point_indices)
+                                                                                  projections)
     print("done")
 
     toc = time.time()
 
-    print(points_2d)
-    print(len(points), "points found.")
-    print(toc - tic, "seconds.\n")
+    print(len(points), "points found")
+    print(len(extrinsic_matrices), "frames used")
+    print(toc - tic, "seconds\n")
 
     print("adjusting points...")
     tic = time.time()
 
-    extrinsics = np.array(extrinsic_matrices)
-    extrinsics = np.array(list(itertools.accumulate(extrinsics, lambda n, m: np.dot(n, m))))
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(extrinsics,
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
                                                                       intrinsic_matrix,
                                                                       points,
                                                                       np.array(points_2d),
