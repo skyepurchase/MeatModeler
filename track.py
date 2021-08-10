@@ -11,7 +11,7 @@ class Track:
         """
         self.coordinates = {prev_frame_ID: feature,
                             frame_ID: correspondent}
-        self.points = [point]
+        self.point = point
         self.updated = True
 
     def reset(self):
@@ -27,9 +27,8 @@ class Track:
     def get2DPoints(self):
         return list(self.coordinates.values())
 
-    def update(self, frame_ID, correspondent, point=None):
+    def update(self, frame_ID, correspondent):
         self.coordinates[frame_ID] = correspondent
-        self.points.append(point)
         self.updated = True
 
     def getCoordinate(self, frame_ID):
@@ -38,14 +37,8 @@ class Track:
     def getCoordinates(self):
         return self.coordinates
 
-    def getPoint(self):
-        """
-        :return: The original triangulated point
-        """
-        return self.points[0]
+    def setPoint(self, point):
+        self.point = point
 
-    def getFinalPoint(self):
-        """
-        :return: The most disparate frames
-        """
-        return self.points[-1]
+    def getPoint(self):
+        return self.point
