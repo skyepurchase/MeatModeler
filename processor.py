@@ -337,76 +337,58 @@ def triangulatePoints(tracks, projections):
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
 
-    :param popped_tracks: The tracks that will not be updated again
+    :param tracks: The tracks that will not be updated again
     :param projections: The poses of the frames so far
-    :return: new 3D points,
-            new 3D point identification number,
-            new 2D point array
-            new frame index array
-            new 3D point index array
+    :return: new 3D points
     """
-    points = []
-    point_ID = 0
-    points_2d = []
-    frame_indices = []
-    point_indices = []
+    points = np.empty((1, 3), np.float)
 
-    # Join together all the points and tracks for pairs of frames
-    frame_pairs = {}
     for track in tracks:
-        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
-        pair = [left, right]
-        identifier = str(frame_ID1) + "-" + str(frame_ID2)
+        point = track.getPoint()
 
-        if identifier in frame_pairs:
-            track_group, coordinates = frame_pairs.get(identifier)
-            track_group.append(track)
-            coordinates.append(pair)
-            frame_pairs[identifier] = (track_group, coordinates)
-        else:
-            track_group = [track]
-            coordinates = [pair]
-            frame_pairs[identifier] = (track_group, coordinates)
+        if point is None:
+            frame_ID1, frame_ID2, left, right = track.getTriangulationData()
+            projection1 = projections[frame_ID1]
+            projection2 = projections[frame_ID2]
 
-    points = None
+            point = cv2.triangulatePoints(projection1, projection2, left, right).T
+            point = point[:, :3] / point[:, -1, np.newaxis]
 
-    # Triangulation
-    for identifier, (track_group, coordinates) in frame_pairs.items():
-        frames = identifier.split("-")
-        frame_ID1 = int(frames[0])
-        frame_ID2 = int(frames[1])
+            track.setPoint(point)
 
-        # Get poses
-        projection1 = projections[frame_ID1][:3, :]
-        projection2 = projections[frame_ID2][:3, :]
+        points = np.concatenate((points, point))
 
-        # Get coordinates
-        coordinates = np.array(coordinates)
-        left_points = coordinates[:, 0, :]
-        right_points = coordinates[:, 1, :]
+    return points
 
-        # Triangulate points
-        new_points = cv2.triangulatePoints(projection1, projection2, left_points.T, right_points.T).T
-        new_points = new_points[:, :3] / new_points[:, -1, np.newaxis]
 
-        # Manage bundling
-        for track, point in zip(track_group, new_points):
-            new_points_2d = track.get2DPoints()
+def managePoints(tracks):
+    """
+    Generates the correspondences between image coordinates, frame extrinsics and points
 
-            for i, point_2d in enumerate(new_points_2d):
-                points_2d.append(point_2d)
-                frame_indices.append(frame_ID1 + i)
+    :param tracks: The relevant feature tracks
+    :return: 3D point array,
+            2D image coordinate array,
+            array of point indices corresponding to each coordinate
+            Array of frame indices corresponding to each coordinate
+    """
+    point_index = 0
+    points = []
+    coordinates = []
+    point_indices = []
+    frame_indices = []
 
-                point_indices.append(point_ID)
+    for track in tracks:
+        point = track.getPoint()
+        points.append(point)
 
-            point_ID += 1
+        for frame_index, coordinate in track.getCoordinates().items():
+            coordinates.append(coordinate)
+            point_indices.append(point_index)
+            frame_indices.append(frame_index)
 
-        if points is None:
-            points = new_points
-        else:
-            points = np.concatenate((points, new_points))
+        point_index += 1
 
-    return points, point_ID, points_2d, frame_indices, point_indices
+    return points, coordinates, frame_indices, point_indices
 
 
 def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_params):
@@ -548,8 +530,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     # Include the points in the tracks not popped at the end
     print("Triangulating points", end="...")
-    points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(popped_tracks,
-                                                                                  projections)
+    points = triangulatePoints(popped_tracks, projections)
     print("done")
 
     toc = time.time()
@@ -561,9 +542,11 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     print("adjusting points...")
     tic = time.time()
 
+    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+
     adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
                                                                       intrinsic_matrix,
-                                                                      points,
+                                                                      np.array(points),
                                                                       np.array(points_2d),
                                                                       np.array(frame_indices),
                                                                       np.array(point_indices))
