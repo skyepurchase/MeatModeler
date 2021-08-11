@@ -332,7 +332,7 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
+def triangulatePoints(tracks, projections):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
@@ -345,10 +345,15 @@ def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_ind
             new frame index array
             new 3D point index array
     """
+    points = []
+    point_ID = 0
+    points_2d = []
+    frame_indices = []
+    point_indices = []
 
     # Join together all the points and tracks for pairs of frames
     frame_pairs = {}
-    for track in popped_tracks:
+    for track in tracks:
         frame_ID1, frame_ID2, left, right = track.getTriangulationData()
         pair = [left, right]
         identifier = str(frame_ID1) + "-" + str(frame_ID2)
@@ -453,10 +458,6 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     # Initialise adjustment
     points = None
-    point_ID = 0
-    points_2d = []
-    frame_indices = []
-    point_indices = []
 
     toc = time.time()
 
@@ -512,32 +513,28 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
             popped_tracks += new_popped_tracks
             print(len(popped_tracks) + len(tracks), "potential points")
 
-            if new_popped_tracks:
-                # Triangulating points
-                print("Triangulating points", end="...")
-                new_points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(new_popped_tracks,
-                                                                                                  projections,
-                                                                                                  point_ID,
-                                                                                                  points_2d,
-                                                                                                  frame_indices,
-                                                                                                  point_indices)
-
-                if points is None:
-                    points = new_points
-                else:
-                    points = np.concatenate((points, new_points))
-                print(len(points), "triangulated")
-
-                # Adjusting frame parameters and points
-                print("Adjusting frames and points", end="...")
-                adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-                                                                                  intrinsic_matrix,
-                                                                                  points,
-                                                                                  np.array(points_2d),
-                                                                                  np.array(frame_indices),
-                                                                                  np.array(point_indices))
-                projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
-                print("done")
+            # if new_popped_tracks:
+            #     # Triangulating points
+            #     print("Triangulating points", end="...")
+            #     new_points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(new_popped_tracks,
+            #                                                                                       projections)
+            #
+            #     if points is None:
+            #         points = new_points
+            #     else:
+            #         points = np.concatenate((points, new_points))
+            #     print(len(points), "triangulated")
+            #
+            #     # Adjusting frame parameters and points
+            #     print("Adjusting frames and points", end="...")
+            #     adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+            #                                                                       intrinsic_matrix,
+            #                                                                       points,
+            #                                                                       np.array(points_2d),
+            #                                                                       np.array(frame_indices),
+            #                                                                       np.array(point_indices))
+            #     projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
+            #     print("done")
 
             # Update variables
             left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
@@ -552,11 +549,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     # Include the points in the tracks not popped at the end
     print("Triangulating points", end="...")
     points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(popped_tracks,
-                                                                                  projections,
-                                                                                  0,
-                                                                                  [],
-                                                                                  [],
-                                                                                  [])
+                                                                                  projections)
     print("done")
 
     toc = time.time()
