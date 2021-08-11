@@ -339,26 +339,15 @@ def triangulatePoints(tracks, projections):
 
     :param tracks: The tracks that will not be updated again
     :param projections: The poses of the frames so far
-    :return: new 3D points
     """
-    points = np.empty((1, 3), np.float)
-
     for track in tracks:
-        point = track.getPoint()
+        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
+        projection1 = projections[frame_ID1]
+        projection2 = projections[frame_ID2]
 
-        if point is None:
-            frame_ID1, frame_ID2, left, right = track.getTriangulationData()
-            projection1 = projections[frame_ID1]
-            projection2 = projections[frame_ID2]
-
-            point = cv2.triangulatePoints(projection1, projection2, left, right).T
-            point = point[:, :3] / point[:, -1, np.newaxis]
-
-            track.setPoint(point)
-
-        points = np.concatenate((points, point))
-
-    return points
+        point = cv2.triangulatePoints(projection1, projection2, left, right).T
+        point = point[:, :3] / point[:, -1, np.newaxis]
+        track.setPoint(point)
 
 
 def managePoints(tracks):
@@ -438,9 +427,6 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     prev_keyframe_ID = 0
     keyframe_ID = 1
 
-    # Initialise adjustment
-    points = None
-
     toc = time.time()
 
     print("Initialisation complete.")
@@ -462,7 +448,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                                                                                                accumulative_error,
                                                                                                lk_params,
                                                                                                feature_params,
-                                                                                               threshold=0.1)
+                                                                                               threshold=0.3)
 
         if is_keyframe:
             # Calculate matches
@@ -498,27 +484,25 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
             if new_popped_tracks:
                 # Triangulating points
                 print("Triangulating points", end="...")
-                new_points = triangulatePoints(new_popped_tracks, projections)
+                triangulatePoints(popped_tracks, projections)
+                print(len(popped_tracks), "triangulated")
 
-                if points is None:
-                    points = new_points
-                else:
-                    points = np.concatenate((points, new_points))
-                print(len(points), "triangulated")
+                # Adjusting frame parameters and points
+                print("Adjusting frames and points", end="...")
+                points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
 
-            #     # Adjusting frame parameters and points
-            #     print("Adjusting frames and points", end="...")
-            #     adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-            #                                                                       intrinsic_matrix,
-            #                                                                       points,
-            #                                                                       np.array(points_2d),
-            #                                                                       np.array(frame_indices),
-            #                                                                       np.array(point_indices))
-            #     projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
-            #     print("done")
+                adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                                                                                  intrinsic_matrix,
+                                                                                  np.array(points),
+                                                                                  np.array(points_2d),
+                                                                                  np.array(frame_indices),
+                                                                                  np.array(point_indices))
+
+                projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
+                print("done")
 
             # Update variables
-            left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
+            left_extrinsic = extrinsic_matrices[-1]  # Left frame was last extrinsic frame
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
@@ -528,13 +512,12 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     popped_tracks += tracks
 
     # Include the points in the tracks not popped at the end
-    print("Triangulating points", end="...")
-    points = triangulatePoints(popped_tracks, projections)
+    print("\nTriangulating all points", end="...")
+    triangulatePoints(popped_tracks, projections)
     print("done")
 
     toc = time.time()
 
-    print(len(points), "points found")
     print(len(extrinsic_matrices), "frames used")
     print(toc - tic, "seconds\n")
 
@@ -552,6 +535,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     toc = time.time()
     print("adjustment complete.")
+    print(len(adjusted_points), "points found")
     print(toc - tic, "seconds.\n")
 
     print("Saving point cloud...")
