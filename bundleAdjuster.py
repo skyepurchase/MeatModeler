@@ -47,7 +47,7 @@ def project(points, frame_params, camera_matrix):
     points_proj = np.einsum("ij,...j", camera_matrix, points_proj)
 
     # Normalise points
-    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
+    points_proj = points_proj[:, :2] / points_proj[:, -1, np.newaxis]
 
     return points_proj
 
