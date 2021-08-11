@@ -147,7 +147,6 @@ def reformatPointResult(result, n_frames, n_points):
     :param result: Least squares regression result
     :param n_frames: The number of frames
     :param n_points: The number of points
-    :param point_indices: An array of which 3D point corresponds to which 2D error
     :return: a 3D cartesian point array,
             a 3D cartesian frame position array
     """

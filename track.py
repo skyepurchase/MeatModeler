@@ -24,9 +24,6 @@ class Track:
         keys = list(self.coordinates.keys())
         return keys[0], keys[-1], self.coordinates.get(keys[0]), self.coordinates.get(keys[-1])
 
-    def get2DPoints(self):
-        return list(self.coordinates.values())
-
     def update(self, frame_ID, correspondent):
         self.coordinates[frame_ID] = correspondent
         self.updated = True
