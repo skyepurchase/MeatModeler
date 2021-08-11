@@ -495,18 +495,17 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
             popped_tracks += new_popped_tracks
             print(len(popped_tracks) + len(tracks), "potential points")
 
-            # if new_popped_tracks:
-            #     # Triangulating points
-            #     print("Triangulating points", end="...")
-            #     new_points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(new_popped_tracks,
-            #                                                                                       projections)
-            #
-            #     if points is None:
-            #         points = new_points
-            #     else:
-            #         points = np.concatenate((points, new_points))
-            #     print(len(points), "triangulated")
-            #
+            if new_popped_tracks:
+                # Triangulating points
+                print("Triangulating points", end="...")
+                new_points = triangulatePoints(new_popped_tracks, projections)
+
+                if points is None:
+                    points = new_points
+                else:
+                    points = np.concatenate((points, new_points))
+                print(len(points), "triangulated")
+
             #     # Adjusting frame parameters and points
             #     print("Adjusting frames and points", end="...")
             #     adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
