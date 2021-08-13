@@ -448,7 +448,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                                                                                                accumulative_error,
                                                                                                lk_params,
                                                                                                feature_params,
-                                                                                               threshold=0.3)
+                                                                                               threshold=0.1)
 
         if is_keyframe:
             # Calculate matches
@@ -550,4 +550,4 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     toc = time.time()
     print("Point cloud saved.")
-    print(tic - toc)
+    print(toc - tic)
