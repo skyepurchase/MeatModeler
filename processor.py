@@ -12,7 +12,7 @@ from track import Track
 
 def increaseContrast(frame):
     """
-    Increases the contrast of the grey scale images by applying CLAHE to the luminance
+    Increases the contrast of the frames by applying CLAHE to the luminance
 
     :param frame: The frame to be editted
     :return: The increased contrast image
@@ -225,20 +225,20 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < threshold * match[1].distance]
 
-    left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
-    right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
+    prev_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    curr_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
 
-    return left_matches, right_matches, new_points, new_descriptors
+    return prev_matches, curr_matches, new_points, new_descriptors
 
 
-def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_matrix, camera_intrinsic_matrix):
+def poseEstimation(prev_frame_points, curr_frame_points, prev_extrinsic_matrix, camera_intrinsic_matrix):
     """
     Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
     the transformation between origin and right frame coordinates
 
-    :param left_frame_points: Undistorted matched points from the left frame
-    :param right_frame_points: Undistorted matched points from the right frame
-    :param left_frame_extrinsic_matrix: 4x4 matrix converting origin coordinates to left frame coordinates
+    :param prev_frame_points: Undistorted matched points from the previous frame
+    :param curr_frame_points: Undistorted matched points from the current frame
+    :param prev_extrinsic_matrix: 4x4 matrix converting origin coordinates to previous frame coordinates
     :param camera_intrinsic_matrix: The intrinsic matrix of the camera
     :return: The used left points,
             The used right points,
@@ -246,34 +246,34 @@ def poseEstimation(left_frame_points, right_frame_points, left_frame_extrinsic_m
             The right frame projection matrix
     """
     # Find essential matrix and inliers
-    essential_matrix, mask_E = cv2.findEssentialMat(left_frame_points,
-                                                    right_frame_points,
+    essential_matrix, mask_E = cv2.findEssentialMat(prev_frame_points,
+                                                    curr_frame_points,
                                                     camera_intrinsic_matrix)
 
     # Use the essential matrix and inliers to find the pose and new inliers
-    _, R_left_to_right, t_left_to_right, mask_RP = cv2.recoverPose(essential_matrix,
-                                                                   left_frame_points,
-                                                                   right_frame_points,
-                                                                   camera_intrinsic_matrix,
-                                                                   mask=mask_E)
+    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
+                                       prev_frame_points,
+                                       curr_frame_points,
+                                       camera_intrinsic_matrix,
+                                       mask=mask_E)
 
     # Create the 4x3 pose matrix from rotation and translation
-    left_to_right_extrinsic_matrix = np.hstack([R_left_to_right, t_left_to_right])
+    pairwise_extrinsic_matrix = np.hstack([R, t])
 
     # Convert to homogeneous 4x4 transformation matrix
-    left_to_right_extrinsic_matrix = np.vstack((left_to_right_extrinsic_matrix, np.array([0, 0, 0, 1])))
+    pairwise_extrinsic_matrix = np.vstack((pairwise_extrinsic_matrix, np.array([0, 0, 0, 1])))
 
     # Take world coordinates to left frame then to right frame
-    right_frame_extrinsic_matrix = np.matmul(left_to_right_extrinsic_matrix, left_frame_extrinsic_matrix)
+    extrinsic_matrix = np.matmul(pairwise_extrinsic_matrix, prev_extrinsic_matrix)
 
     # Projection from world coordinates to right frame image coordinates
-    projection_matrix = np.dot(camera_intrinsic_matrix, right_frame_extrinsic_matrix[:3])
+    projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
 
     # Usable points
-    usable_left_points = left_frame_points[mask_RP[:, 0] == 1]
-    usable_right_points = right_frame_points[mask_RP[:, 0] == 1]
+    usable_prev_points = prev_frame_points[mask_RP[:, 0] == 1]
+    usable_curr_points = curr_frame_points[mask_RP[:, 0] == 1]
 
-    return usable_left_points, usable_right_points, right_frame_extrinsic_matrix, projection_matrix
+    return usable_prev_points, usable_curr_points, extrinsic_matrix, projection_matrix
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -302,7 +302,7 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
         is_new_track = True
 
         for track in tracks:
-            # If the current point matches the track's last point then they reference the same feature
+            # If the current point matches the previous key frame's point then they reference the same feature
             prior_point = track.getCoordinate(prev_keyframe_ID)
 
             # So update the track
@@ -341,11 +341,11 @@ def triangulatePoints(tracks, projections):
     :param projections: The poses of the frames so far
     """
     for track in tracks:
-        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
+        frame_ID1, frame_ID2, feature, correspondent = track.getTriangulationData()
         projection1 = projections[frame_ID1]
         projection2 = projections[frame_ID2]
 
-        point = cv2.triangulatePoints(projection1, projection2, left, right).T
+        point = cv2.triangulatePoints(projection1, projection2, feature, correspondent).T
         point = point[:, :3] / point[:, -1, np.newaxis]
         track.setPoint(point)
 
@@ -413,13 +413,13 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    left_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
+    prev_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
 
     # But needs to be placed into world coordinates
-    original_projection = np.dot(intrinsic_matrix, left_extrinsic[:3])
+    original_projection = np.dot(intrinsic_matrix, prev_extrinsic[:3])
 
     projections = [original_projection]  # The first keyframe is added
-    extrinsic_matrices = [left_extrinsic]
+    extrinsic_matrices = [prev_extrinsic]
 
     # Initialise point tracking
     tracks = []
@@ -453,31 +453,31 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
         if is_keyframe:
             # Calculate matches
             print("\nFinding matches", end="...")
-            L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                          prev_orb_points,
-                                                                                          prev_orb_descriptors,
-                                                                                          orb,
-                                                                                          flann_params)
-            print("found", len(L_matches))
+            prev_matches, curr_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
+                                                                                                prev_orb_points,
+                                                                                                prev_orb_descriptors,
+                                                                                                orb,
+                                                                                                flann_params)
+            print("found", len(prev_matches))
 
             # Pose estimation
             print("Finding inliers", end="...")
-            L_points, R_points, right_extrinsic, projection = poseEstimation(L_matches,
-                                                                             R_matches,
-                                                                             left_extrinsic,
-                                                                             intrinsic_matrix)
-            print("found", len(L_points))
+            prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
+                                                                                           curr_matches,
+                                                                                           prev_extrinsic,
+                                                                                           intrinsic_matrix)
+            print("found", len(prev_features))
 
             projections.append(projection)
-            extrinsic_matrices.append(right_extrinsic)
+            extrinsic_matrices.append(new_extrinsic)
 
             # Manage tracks
             print("Grouping points", end="...")
             new_popped_tracks, tracks = pointTracking(tracks,
                                                       prev_keyframe_ID,
-                                                      L_points,
+                                                      prev_features,
                                                       keyframe_ID,
-                                                      R_points)
+                                                      curr_correspondents)
             popped_tracks += new_popped_tracks
             print(len(popped_tracks) + len(tracks), "potential points")
 
@@ -502,7 +502,7 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                 print("done")
 
             # Update variables
-            left_extrinsic = extrinsic_matrices[-1]  # Left frame was last extrinsic frame
+            prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
             prev_keyframe_ID = keyframe_ID
             keyframe_ID += 1
 
