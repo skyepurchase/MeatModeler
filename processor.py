@@ -429,6 +429,8 @@ def process(video, path, lk_params, feature_params, flann_params):
     # Add the remaining tracks which are implicitly popped
     popped_tracks += tracks
 
+    intrinsic_matrix, distortion_coefficients = calibrate(frame_corners, prev_frame_grey.shape[::-1], (4, 3))
+
     # # Include the points in the tracks not popped at the end
     # print("\nTriangulating all points", end="...")
     # triangulatePoints(popped_tracks, projections)
