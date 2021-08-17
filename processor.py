@@ -311,9 +311,14 @@ def process(video, path, lk_params, feature_params, flann_params):
 
     # Retrieve first frame
     _, start_frame = cap.read()
+    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+    has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
+    while not has_chessboard:
+        _, start_frame = cap.read()
+        prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+        has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
 
     # Initialise keyframe tracking
-    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
     prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
                                                 mask=None,
                                                 **feature_params)
@@ -323,16 +328,12 @@ def process(video, path, lk_params, feature_params, flann_params):
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    frame_corners = []
-    frames = []
-
-    has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
-    if has_chessboard:
-        frame_corners.append(corners)
-        frames.append(prev_frame_grey)
-
-    projections = []  # The first keyframe is added
+    frame_corners = [corners]
+    frames = [prev_frame_grey]
     extrinsic_matrices = []
+    projections = []
+    rvecs = []
+    tvecs = []
 
     # Initialise point tracking
     tracks = []
@@ -430,6 +431,9 @@ def process(video, path, lk_params, feature_params, flann_params):
                                                                          2,
                                                                          intrinsic_matrix,
                                                                          distortion_coefficients)
+
+        rvecs.append(rvec)
+        tvecs.append(tvec)
         extrinsic_matrices.append(extrinsic_matrix)
         projections.append(projection_matrix)
 
