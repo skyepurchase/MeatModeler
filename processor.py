@@ -26,11 +26,12 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
-def calibrate(images, corner_dims=(7, 7)):
+def calibrate(img_points, size, corner_dims):
     """
     Takes specific chess board images and calibrates the camera appropriately
 
-    :param images: A list of different openCV image objects of a known chessboard
+    :param img_points: A list of the corners for each frame
+    :param size: The frame size
     :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
     :return: The intrinsic property matrix,
             The distortion coefficients
@@ -40,27 +41,14 @@ def calibrate(images, corner_dims=(7, 7)):
     objp = np.zeros((x * y, 3), np.float32)
     objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
-    # Arrays to store object and image points from all images
     obj_points = []
-    img_points = []
 
-    for img in images:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Find the chessboard corners
-        success, corners = cv2.findChessboardCorners(gray, corner_dims, None)
-
-        # If found, add object points, image points
-        if success:
-            obj_points.append(objp)
-            img_points.append(corners)
-
-    img = images[0]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    for _ in img_points:
+        obj_points.append(objp)
 
     success, matrix, distortion, _, _ = cv2.calibrateCamera(obj_points,
                                                             img_points,
-                                                            gray.shape[::-1],
+                                                            size,
                                                             None,
                                                             None)
 
