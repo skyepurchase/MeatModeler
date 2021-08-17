@@ -446,6 +446,11 @@ def process(video, path, lk_params, feature_params, flann_params):
         count += 1
     print("Done", end="\n\n")
 
+    # Triangulation
+    print("Triangulating points", end="...")
+    triangulatePoints(popped_tracks, projections)
+    print("done", end="\n\n")
+
     # # Include the points in the tracks not popped at the end
     # print("\nTriangulating all points", end="...")
     # triangulatePoints(popped_tracks, projections)
