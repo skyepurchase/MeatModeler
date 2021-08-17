@@ -1,7 +1,6 @@
 import time
 
 import cv2
-import itertools
 import numpy as np
 import pandas as pd
 from pyntcloud import PyntCloud
@@ -9,12 +8,10 @@ from pyntcloud import PyntCloud
 import bundleAdjuster
 from track import Track
 
-import plotly.graph_objects as go
-
 
 def increaseContrast(frame):
     """
-    Increases the contrast of the grey scale images by applying CLAHE to the luminance
+    Increases the contrast of the frames by applying CLAHE to the luminance
 
     :param frame: The frame to be editted
     :return: The increased contrast image
@@ -29,32 +26,48 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
-def undistortFrame(frame, camera_matrix, distortion_coefficients):
+def calibrate(images, corner_dims=(7, 7)):
     """
-    Takes a frame and removes the distortion cause by the camera
+    Takes specific chess board images and calibrates the camera appropriately
 
-    :param frame: Frame with distortion
-    :param camera_matrix: The intrinsic matrix of the camera
-    :param distortion_coefficients: The distortion coefficients of the camera
-    :return: Frame without distortion, cropped to ROI
+    :param images: A list of different openCV image objects of a known chessboard
+    :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
+    :return: The intrinsic property matrix,
+            The distortion coefficients
     """
-    height, width = frame.shape[:2]
+    # Prepare chessboard 3D points
+    x, y = corner_dims
+    objp = np.zeros((x * y, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
-    # Find the new camera matrix for the specific frame
-    optimal_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix,
-                                                               distortion_coefficients,
-                                                               (width, height),
-                                                               1,
-                                                               (width, height))
+    # Arrays to store object and image points from all images
+    obj_points = []
+    img_points = []
 
-    # Utilise this to get an undistorted frame
-    undistorted_frame = cv2.undistort(frame, camera_matrix, distortion_coefficients, None, optimal_camera_matrix)
+    for img in images:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Crop the edges
-    x, y, w, h = roi
-    undistorted_frame = undistorted_frame[y:y + h, x:x + w]
+        # Find the chessboard corners
+        success, corners = cv2.findChessboardCorners(gray, corner_dims, None)
 
-    return undistorted_frame
+        # If found, add object points, image points
+        if success:
+            obj_points.append(objp)
+            img_points.append(corners)
+
+    img = images[0]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    success, matrix, distortion, _, _ = cv2.calibrateCamera(obj_points,
+                                                            img_points,
+                                                            gray.shape[::-1],
+                                                            None,
+                                                            None)
+
+    if success:
+        return matrix, distortion
+
+    return None
 
 
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
@@ -135,10 +148,55 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     good_matches = [match[0] for match in matches if
                     len(match) == 2 and match[0].distance < threshold * match[1].distance]
 
-    left_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
-    right_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
+    prev_matches = np.array([prev_orb_points[m.queryIdx].pt for m in good_matches])
+    curr_matches = np.array([new_points[m.trainIdx].pt for m in good_matches])
 
-    return left_matches, right_matches, new_points, new_descriptors
+    return prev_matches, curr_matches, new_points, new_descriptors
+
+
+def poseEstimation(prev_frame_points, curr_frame_points, prev_extrinsic_matrix, camera_intrinsic_matrix):
+    """
+    Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
+    the transformation between origin and right frame coordinates
+
+    :param prev_frame_points: Undistorted matched points from the previous frame
+    :param curr_frame_points: Undistorted matched points from the current frame
+    :param prev_extrinsic_matrix: 4x4 matrix converting origin coordinates to previous frame coordinates
+    :param camera_intrinsic_matrix: The intrinsic matrix of the camera
+    :return: The used left points,
+            The used right points,
+            The right frame extrinsic matrix,
+            The right frame projection matrix
+    """
+    # Find essential matrix and inliers
+    essential_matrix, mask_E = cv2.findEssentialMat(prev_frame_points,
+                                                    curr_frame_points,
+                                                    camera_intrinsic_matrix)
+
+    # Use the essential matrix and inliers to find the pose and new inliers
+    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
+                                       prev_frame_points,
+                                       curr_frame_points,
+                                       camera_intrinsic_matrix,
+                                       mask=mask_E)
+
+    # Create the 4x3 pose matrix from rotation and translation
+    pairwise_extrinsic_matrix = np.hstack([R, t])
+
+    # Convert to homogeneous 4x4 transformation matrix
+    pairwise_extrinsic_matrix = np.vstack((pairwise_extrinsic_matrix, np.array([0, 0, 0, 1])))
+
+    # Take world coordinates to left frame then to right frame
+    extrinsic_matrix = np.matmul(pairwise_extrinsic_matrix, prev_extrinsic_matrix)
+
+    # Projection from world coordinates to right frame image coordinates
+    projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
+
+    # Usable points
+    usable_prev_points = prev_frame_points[mask_RP[:, 0] == 1]
+    usable_curr_points = curr_frame_points[mask_RP[:, 0] == 1]
+
+    return usable_prev_points, usable_curr_points, extrinsic_matrix, projection_matrix
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -167,8 +225,8 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
         is_new_track = True
 
         for track in tracks:
-            # If the current point matches the track's last point then they reference the same feature
-            prior_point = track.getLastPoint()
+            # If the current point matches the previous key frame's point then they reference the same feature
+            prior_point = track.getCoordinate(prev_keyframe_ID)
 
             # So update the track
             if feature_point == prior_point:
@@ -197,91 +255,55 @@ def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, corresp
     return popped_tracks, updated_tracks
 
 
-def triangulatePoints(popped_tracks, projections, point_ID, points_2d, frame_indices, point_indices):
+def triangulatePoints(tracks, projections):
     """
     Generates the new 3D points from the popped_tracks and poses as well as keeping track of how the points and
     frames link together
 
-    :param popped_tracks: The tracks that will not be updated again
+    :param tracks: The tracks that will not be updated again
     :param projections: The poses of the frames so far
-    :param point_ID: The current 3D point identification number
-    :param points_2d: The 2D image points analysed so far
-    :param frame_indices: The index of the frame relating to each 2D point
-    :param point_indices: The index of the 3D point relating to each 2D point
-    :return: new 3D points,
-            new 3D point identification number,
-            new 2D point array
-            new frame index array
-            new 3D point index array
     """
-    # Join together all the points and tracks for pairs of frames
-    frame_pairs = {}
-    for track in popped_tracks:
-        frame_ID1, frame_ID2, left, right = track.getTriangulationData()
-        pair = [left, right]
-        identifier = str(frame_ID1) + "-" + str(frame_ID2)
+    for track in tracks:
+        frame_ID1, frame_ID2, feature, correspondent = track.getTriangulationData()
+        projection1 = projections[frame_ID1]
+        projection2 = projections[frame_ID2]
 
-        if identifier in frame_pairs:
-            track_group, coordinates = frame_pairs.get(identifier)
-            track_group.append(track)
-            coordinates.append(pair)
-            frame_pairs[identifier] = (track_group, coordinates)
-        else:
-            track_group = [track]
-            coordinates = [pair]
-            frame_pairs[identifier] = (track_group, coordinates)
-
-    points = None
-    count = 0
-
-    # Triangulation
-    for identifier, (track_group, coordinates) in frame_pairs.items():
-        frames = identifier.split("-")
-        frame_ID1 = int(frames[0])
-        frame_ID2 = int(frames[1])
-
-        # Get poses
-        projection1 = projections[frame_ID1][:3, :]
-        projection2 = projections[frame_ID2][:3, :]
-
-        # Get coordinates
-        coordinates = np.array(coordinates)
-        left_points = coordinates[:, 0, :]
-        right_points = coordinates[:, 1, :]
-
-        # Triangulate points
-        new_points = cv2.triangulatePoints(projection1, projection2, left_points.T, right_points.T).T
-        new_points = new_points[:, :3] / new_points[:, -1, np.newaxis]
-
-        # Manage bundling
-        for track, point in zip(track_group, new_points):
-            new_points_2d = track.get2DPoints()
-
-            for i, point_2d in enumerate(new_points_2d):
-                points_2d.append(point_2d)
-
-                if i == len(new_points_2d) - 1:
-                    # The last index must be frame_ID2 index
-                    # This is a problem for comparing the last frame to the first
-                    # As the first frame is 0 which cannot be reached with addition
-                    frame_indices.append(frame_ID2)
-                else:
-                    frame_indices.append(frame_ID1 + i)
-
-                point_indices.append(point_ID)
-
-            point_ID += 1
-            count += 1
-
-        if points is None:
-            points = new_points
-        else:
-            points = np.concatenate((points, new_points))
-
-    return points, point_ID, points_2d, frame_indices, point_indices
+        point = cv2.triangulatePoints(projection1, projection2, feature, correspondent).T
+        point = point[:, :3] / point[:, -1, np.newaxis]
+        track.setPoint(point)
 
 
-def process(video, lk_params, feature_params, flann_params):
+def managePoints(tracks):
+    """
+    Generates the correspondences between image coordinates, frame extrinsics and points
+
+    :param tracks: The relevant feature tracks
+    :return: 3D point array,
+            2D image coordinate array,
+            array of point indices corresponding to each coordinate
+            Array of frame indices corresponding to each coordinate
+    """
+    point_index = 0
+    points = []
+    coordinates = []
+    point_indices = []
+    frame_indices = []
+
+    for track in tracks:
+        point = track.getPoint()
+        points.append(point)
+
+        for frame_index, coordinate in track.getCoordinates().items():
+            coordinates.append(coordinate)
+            point_indices.append(point_index)
+            frame_indices.append(frame_index)
+
+        point_index += 1
+
+    return points, coordinates, frame_indices, point_indices
+
+
+def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
 
@@ -293,68 +315,55 @@ def process(video, lk_params, feature_params, flann_params):
     :param flann_params: FLANN feature matching parameters
     :return: A 3D point cloud
     """
+    print("Initialising...")
+    tic = time.time()
+
+    orb = cv2.ORB_create(nfeatures=20000)
+
     cap = cv2.VideoCapture(video)
-    count = 0
 
     # Retrieve first frame
-    success, frame = cap.read()
-    frame_size = frame.shape[::-1][1:]
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    _, start_frame = cap.read()
 
     # Initialise keyframe tracking
-    prev_frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
+    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
     prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
                                                 mask=None,
                                                 **feature_params)
     accumulative_error = 0
 
     # Initialise feature tracking
-    orb = cv2.ORB_create(nfeatures=20000)
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
-    # # Initialise point tracking
-    # tracks = []
-    # popped_tracks = []
-    # prev_keyframe_ID = 0
-    # keyframe_ID = 1
-    #
-    # # Initialise bundling
-    # points_2d = []
-    # frame_indices = []
-    # point_indices = []
-    # point_ID = 0
-    #
-    # toc = time.time()
-    #
-    # print("Initialisation complete.")
-    # print(toc - tic, "seconds.\n")
-    #
-    # print("Finding points...")
-    #
-    # tic = time.time()
+    # Initialise pose estimation
+    prev_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
+
+    # But needs to be placed into world coordinates
+    original_projection = np.dot(intrinsic_matrix, prev_extrinsic[:3])
+
+    projections = [original_projection]  # The first keyframe is added
+    extrinsic_matrices = [prev_extrinsic]
+
+    # Initialise point tracking
+    tracks = []
+    popped_tracks = []
+    prev_keyframe_ID = 0
+    keyframe_ID = 1
+
+    toc = time.time()
+
+    print("Initialisation complete.")
+    print(toc - tic, "seconds.\n")
+
+    print("Finding points...")
+
+    tic = time.time()
 
     # Processing loop
-    # Initialise calibration
-    usable_frames = []
-    img_points = []
-    calibration_obj_points = []
+    success, frame = cap.read()
 
-    calibration_objp = np.zeros((12, 3), np.float32)
-    stereo_objp = np.zeros((12, 3), np.float32)
-
-    # Let z=0 for all chessboard corners
-    calibration_objp[:, :2] = np.mgrid[0:4, 0:3].T.reshape(-1, 2) * 2
-
-    # Let y = 0 for all chessboard corners
-    # Depth is z and height is y. The chessboard is assumed to be at constant height not depth
-    stereo_objp[:, 0] = calibration_objp[:, 0]
-    stereo_objp[:, 1] = calibration_objp[:, 2]
-    stereo_objp[:, 2] = calibration_objp[:, 1]
-
-    print("Finding usable keyframes", end="...")
     while success:
         frame_grey = cv2.cvtColor(increaseContrast(frame), cv2.COLOR_BGR2GRAY)
-        count += 1
 
         is_keyframe, prev_frame_grey, prev_frame_points, accumulative_error = keyframeTracking(frame_grey,
                                                                                                prev_frame_grey,
@@ -364,155 +373,108 @@ def process(video, lk_params, feature_params, flann_params):
                                                                                                feature_params,
                                                                                                threshold=0.1)
 
-        hasChessboard, corners = cv2.findChessboardCorners(frame_grey, (4, 3))
+        if is_keyframe:
+            # Find chessboard corners
+            has_chessboard, corners = cv2.findChessboardCorners(frame_grey, (4, 3))
 
-        if is_keyframe and hasChessboard:
-            usable_frames.append(frame_grey)
-            img_points.append(corners)
-            calibration_obj_points.append(calibration_objp)
+            if has_chessboard:
+                # Calculate matches
+                print("\nFinding matches", end="...")
+                prev_matches, curr_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
+                                                                                                    prev_orb_points,
+                                                                                                    prev_orb_descriptors,
+                                                                                                    orb,
+                                                                                                    flann_params)
+                print("found", len(prev_matches))
 
-            L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                          prev_orb_points,
-                                                                                          prev_orb_descriptors,
-                                                                                          orb,
-                                                                                          flann_params)
+                # Pose estimation
+                print("Finding inliers", end="...")
+                prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
+                                                                                               curr_matches,
+                                                                                               prev_extrinsic,
+                                                                                               intrinsic_matrix)
+                print("found", len(prev_features))
 
+                projections.append(projection)
+                extrinsic_matrices.append(new_extrinsic)
 
+                # Manage tracks
+                print("Grouping points", end="...")
+                new_popped_tracks, tracks = pointTracking(tracks,
+                                                          prev_keyframe_ID,
+                                                          prev_features,
+                                                          keyframe_ID,
+                                                          curr_correspondents)
+                popped_tracks += new_popped_tracks
+                print(len(popped_tracks) + len(tracks), "potential points")
 
-            # # Calculate matches
-            # print("\nFinding matches", end="...")
-            # L_matches, R_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-            #                                                                               prev_orb_points,
-            #                                                                               prev_orb_descriptors,
-            #                                                                               orb,
-            #                                                                               flann_params)
-            # print("found", len(L_matches))
-            #
-            # # Pose estimation
-            # print("Finding inliers", end="...")
-            # L_points, R_points, right_extrinsic, pairwise_extrinsic, projection = poseEstimation(L_matches,
-            #                                                                                      R_matches,
-            #                                                                                      left_extrinsic,
-            #                                                                                      intrinsic_matrix)
-            # print("found", len(L_points))
-            #
-            # projections.append(projection)
-            # extrinsic_matrices.append(pairwise_extrinsic)
-            #
-            # # Manage tracks
-            # print("Grouping points", end="...")
-            # new_popped_tracks, tracks = pointTracking(tracks,
-            #                                           prev_keyframe_ID,
-            #                                           L_points,
-            #                                           keyframe_ID,
-            #                                           R_points)
-            # popped_tracks += new_popped_tracks
-            # print(len(popped_tracks), "potential points")
-            #
-            # # Update variables
-            # left_extrinsic = right_extrinsic  # Right keyframe now becomes the left keyframe
-            # prev_keyframe_ID = keyframe_ID
-            # keyframe_ID += 1
+                if new_popped_tracks:
+                    # Triangulating points
+                    print("Triangulating points", end="...")
+                    triangulatePoints(popped_tracks, projections)
+                    print(len(popped_tracks), "triangulated")
+
+                    # Adjusting frame parameters and points
+                    print("Adjusting frames and points", end="...")
+                    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+
+                    adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                                                                                      intrinsic_matrix,
+                                                                                      np.array(points),
+                                                                                      np.array(points_2d),
+                                                                                      np.array(frame_indices),
+                                                                                      np.array(point_indices))
+
+                    projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
+                    print("done")
+
+                # Update variables
+                prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
+                prev_keyframe_ID = keyframe_ID
+                keyframe_ID += 1
 
         success, frame = cap.read()
 
-    print("found", len(img_points), end="\n\n")
+    # Add the remaining tracks which are implicitly popped
+    popped_tracks += tracks
 
-    print("Calibrating camera", end="...")
+    # Include the points in the tracks not popped at the end
+    print("\nTriangulating all points", end="...")
+    triangulatePoints(popped_tracks, projections)
+    print("done")
 
-    success, intrinsic_matrix, distortion, rvecs, tvecs = cv2.calibrateCamera(calibration_obj_points,
-                                                                              img_points,
-                                                                              frame_size,
-                                                                              None,
-                                                                              None)
+    toc = time.time()
 
-    print("calibrated\n\n")
+    print(len(extrinsic_matrices), "frames used")
+    print(toc - tic, "seconds\n")
 
-    print("Calculating projections", end="...")
-    extrinsics = np.array([np.hstack((cv2.Rodrigues(rvec)[0], tvec)) for rvec, tvec in zip(rvecs, tvecs)])
-    projections = np.einsum("ij,...jk", intrinsic_matrix, extrinsics)
-    print("done\n\n")
+    print("adjusting points...")
+    tic = time.time()
 
-    positions = bundleAdjuster.rotate(-np.array(tvecs).reshape((len(tvecs), 3)),
-                                      -np.array(rvecs).reshape((len(rvecs), 3))).reshape((len(rvecs), 3))
-    looking_at = bundleAdjuster.rotate(np.repeat([[0, 0, 1]], len(rvecs)).reshape(len(rvecs), 3),
-                                       -np.array(rvecs).reshape((len(rvecs), 3))).reshape((len(rvecs)), 3)
+    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
 
-    fig = go.Figure()
-    positions = np.array(positions)
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                                                                      intrinsic_matrix,
+                                                                      np.array(points),
+                                                                      np.array(points_2d),
+                                                                      np.array(frame_indices),
+                                                                      np.array(point_indices))
 
-    fig.add_trace(go.Scatter3d(x=positions[:, 0],
-                               y=positions[:, 2],
-                               z=positions[:, 1],
-                               mode="text+lines+markers",
-                               name="Camera positions",
-                               textposition="top center",
-                               text=[str(i) for i in range(len(positions))]))
+    toc = time.time()
+    print("adjustment complete.")
+    print(len(adjusted_points), "points found")
+    print(toc - tic, "seconds.\n")
 
-    fig.add_trace(go.Scatter3d(x=calibration_objp[:, 0],
-                               y=calibration_objp[:, 2],
-                               z=calibration_objp[:, 1],
-                               mode="text+lines+markers",
-                               name="Chessboard positions",
-                               textposition="top center",
-                               text=[str(i) for i in range(len(calibration_objp))]))
+    print("Saving point cloud...")
+    tic = time.time()
 
-    fig.add_trace(go.Scatter3d(x=looking_at[:, 0] + positions[:, 0],
-                               y=looking_at[:, 2] + positions[:, 2],
-                               z=looking_at[:, 1] + positions[:, 1],
-                               mode="text+markers",
-                               name="Looking_at",
-                               textposition="top center",
-                               text=[str(i) for i in range(len(positions))]))
+    filename = path + "Cloud.ply"
+    cloud = PyntCloud(pd.DataFrame(
+        data=adjusted_points,
+        columns=['x', 'y', 'z']
+    ))
+    cloud.to_file(filename)
 
-    fig.show()
-
-    exit()
-
-    # # Add the remaining tracks which are implicitly popped
-    # popped_tracks += tracks
-    #
-    # # Include the points in the tracks not popped at the end
-    # print("Triangulating points", end="...")
-    # points, point_ID, points_2d, frame_indices, point_indices = triangulatePoints(popped_tracks,
-    #                                                                               projections,
-    #                                                                               point_ID,
-    #                                                                               points_2d,
-    #                                                                               frame_indices,
-    #                                                                               point_indices)
-    # print("done")
-    #
-    # toc = time.time()
-    #
-    # print(len(tracks), "points found.")
-    # print(toc - tic, "seconds.\n")
-    #
-    # print("adjusting points...")
-    # tic = time.time()
-    #
-    # extrinsics = np.array(extrinsic_matrices)
-    # extrinsics = np.array(list(itertools.accumulate(extrinsics, lambda n, m: np.dot(n, m))))
-    # adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(extrinsics,
-    #                                                                   intrinsic_matrix,
-    #                                                                   points,
-    #                                                                   np.array(points_2d),
-    #                                                                   np.array(frame_indices),
-    #                                                                   np.array(point_indices))
-    #
-    # toc = time.time()
-    # print("adjustment complete.")
-    # print(toc - tic, "seconds.\n")
-    #
-    # print("Saving point cloud...")
-    # tic = time.time()
-    #
-    # filename = path + "Cloud.ply"
-    # cloud = PyntCloud(pd.DataFrame(
-    #     data=adjusted_points,
-    #     columns=['x', 'y', 'z']
-    # ))
-    # cloud.to_file(filename)
-    #
-    # toc = time.time()
-    # print("Point cloud saved.")
-    # print(tic - toc)
+    toc = time.time()
+    print("Point cloud saved.")
+    print(toc - tic)
