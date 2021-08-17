@@ -303,13 +303,12 @@ def managePoints(tracks):
     return points, coordinates, frame_indices, point_indices
 
 
-def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_params):
+def process(video, path, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
 
     :param video: The video to be converted to a 3D mesh
     :param path: The path to save images to
-    :param intrinsic_matrix: The intrinsic matrix for the video camera used
     :param lk_params: Lucas-Kanade feature tracking parameters
     :param feature_params: OpenCV GoodFeaturesToTrack parameters
     :param flann_params: FLANN feature matching parameters
@@ -342,13 +341,8 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     if has_chessboard:
         frame_corners.append(corners)
 
-    prev_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-
-    # But needs to be placed into world coordinates
-    original_projection = np.dot(intrinsic_matrix, prev_extrinsic[:3])
-
-    projections = [original_projection]  # The first keyframe is added
-    extrinsic_matrices = [prev_extrinsic]
+    projections = []  # The first keyframe is added
+    extrinsic_matrices = []
 
     # Initialise point tracking
     tracks = []
