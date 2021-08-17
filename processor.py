@@ -336,6 +336,12 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
+    frame_corners = []
+
+    has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
+    if has_chessboard:
+        frame_corners.append(corners)
+
     prev_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
 
     # But needs to be placed into world coordinates
@@ -378,6 +384,9 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
             has_chessboard, corners = cv2.findChessboardCorners(frame_grey, (4, 3))
 
             if has_chessboard:
+                # Append frame corners
+                frame_corners.append(corners)
+
                 # Calculate matches
                 print("\nFinding matches", end="...")
                 prev_matches, curr_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
