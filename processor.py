@@ -422,8 +422,14 @@ def process(video, path, lk_params, feature_params, flann_params):
     # Add the remaining tracks which are implicitly popped
     popped_tracks += tracks
 
+    # Calibration
+    print("\nCalibrating camera", end="...")
     intrinsic_matrix, distortion_coefficients = calibrate(frame_corners, prev_frame_grey.shape[::-1], (4, 3))
+    print("done", end="\n\n")
 
+    # Pose estimation
+    print("Estimating frame positions...")
+    count = 0
     for corners, frame in zip(frame_corners, frames):
         rvec, tvec, extrinsic_matrix, projection_matrix = poseEstimation(corners,
                                                                          frame,
@@ -436,6 +442,9 @@ def process(video, path, lk_params, feature_params, flann_params):
         tvecs.append(tvec)
         extrinsic_matrices.append(extrinsic_matrix)
         projections.append(projection_matrix)
+        print("Frame", count)
+        count += 1
+    print("Done", end="\n\n")
 
     # # Include the points in the tracks not popped at the end
     # print("\nTriangulating all points", end="...")
