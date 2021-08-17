@@ -387,49 +387,49 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                                                                                                     flann_params)
                 print("found", len(prev_matches))
 
-                # Pose estimation
-                print("Finding inliers", end="...")
-                prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
-                                                                                               curr_matches,
-                                                                                               prev_extrinsic,
-                                                                                               intrinsic_matrix)
-                print("found", len(prev_features))
-
-                projections.append(projection)
-                extrinsic_matrices.append(new_extrinsic)
+                # # Pose estimation
+                # print("Finding inliers", end="...")
+                # prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
+                #                                                                                curr_matches,
+                #                                                                                prev_extrinsic,
+                #                                                                                intrinsic_matrix)
+                # print("found", len(prev_features))
+                #
+                # projections.append(projection)
+                # extrinsic_matrices.append(new_extrinsic)
 
                 # Manage tracks
                 print("Grouping points", end="...")
                 new_popped_tracks, tracks = pointTracking(tracks,
                                                           prev_keyframe_ID,
-                                                          prev_features,
+                                                          prev_matches,
                                                           keyframe_ID,
-                                                          curr_correspondents)
+                                                          curr_matches)
                 popped_tracks += new_popped_tracks
                 print(len(popped_tracks) + len(tracks), "potential points")
 
-                if new_popped_tracks:
-                    # Triangulating points
-                    print("Triangulating points", end="...")
-                    triangulatePoints(popped_tracks, projections)
-                    print(len(popped_tracks), "triangulated")
-
-                    # Adjusting frame parameters and points
-                    print("Adjusting frames and points", end="...")
-                    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
-
-                    adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-                                                                                      intrinsic_matrix,
-                                                                                      np.array(points),
-                                                                                      np.array(points_2d),
-                                                                                      np.array(frame_indices),
-                                                                                      np.array(point_indices))
-
-                    projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
-                    print("done")
+                # if new_popped_tracks:
+                #     # Triangulating points
+                #     print("Triangulating points", end="...")
+                #     triangulatePoints(popped_tracks, projections)
+                #     print(len(popped_tracks), "triangulated")
+                #
+                #     # Adjusting frame parameters and points
+                #     print("Adjusting frames and points", end="...")
+                #     points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+                #
+                #     adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                #                                                                       intrinsic_matrix,
+                #                                                                       np.array(points),
+                #                                                                       np.array(points_2d),
+                #                                                                       np.array(frame_indices),
+                #                                                                       np.array(point_indices))
+                #
+                #     projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
+                #     print("done")
 
                 # Update variables
-                prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
+                # prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
                 prev_keyframe_ID = keyframe_ID
                 keyframe_ID += 1
 
@@ -438,43 +438,43 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     # Add the remaining tracks which are implicitly popped
     popped_tracks += tracks
 
-    # Include the points in the tracks not popped at the end
-    print("\nTriangulating all points", end="...")
-    triangulatePoints(popped_tracks, projections)
-    print("done")
-
-    toc = time.time()
-
-    print(len(extrinsic_matrices), "frames used")
-    print(toc - tic, "seconds\n")
-
-    print("adjusting points...")
-    tic = time.time()
-
-    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
-
-    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-                                                                      intrinsic_matrix,
-                                                                      np.array(points),
-                                                                      np.array(points_2d),
-                                                                      np.array(frame_indices),
-                                                                      np.array(point_indices))
-
-    toc = time.time()
-    print("adjustment complete.")
-    print(len(adjusted_points), "points found")
-    print(toc - tic, "seconds.\n")
-
-    print("Saving point cloud...")
-    tic = time.time()
-
-    filename = path + "Cloud.ply"
-    cloud = PyntCloud(pd.DataFrame(
-        data=adjusted_points,
-        columns=['x', 'y', 'z']
-    ))
-    cloud.to_file(filename)
-
-    toc = time.time()
-    print("Point cloud saved.")
-    print(toc - tic)
+    # # Include the points in the tracks not popped at the end
+    # print("\nTriangulating all points", end="...")
+    # triangulatePoints(popped_tracks, projections)
+    # print("done")
+    #
+    # toc = time.time()
+    #
+    # print(len(extrinsic_matrices), "frames used")
+    # print(toc - tic, "seconds\n")
+    #
+    # print("adjusting points...")
+    # tic = time.time()
+    #
+    # points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+    #
+    # adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+    #                                                                   intrinsic_matrix,
+    #                                                                   np.array(points),
+    #                                                                   np.array(points_2d),
+    #                                                                   np.array(frame_indices),
+    #                                                                   np.array(point_indices))
+    #
+    # toc = time.time()
+    # print("adjustment complete.")
+    # print(len(adjusted_points), "points found")
+    # print(toc - tic, "seconds.\n")
+    #
+    # print("Saving point cloud...")
+    # tic = time.time()
+    #
+    # filename = path + "Cloud.ply"
+    # cloud = PyntCloud(pd.DataFrame(
+    #     data=adjusted_points,
+    #     columns=['x', 'y', 'z']
+    # ))
+    # cloud.to_file(filename)
+    #
+    # toc = time.time()
+    # print("Point cloud saved.")
+    # print(toc - tic)
