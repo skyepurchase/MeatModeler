@@ -26,18 +26,18 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
-def calibrate(img_points, size, corner_dims):
+def calibrate(img_points, size, pattern_shape):
     """
     Takes specific chess board images and calibrates the camera appropriately
 
     :param img_points: A list of the corners for each frame
     :param size: The frame size
-    :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
+    :param pattern_shape: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
     :return: The intrinsic property matrix,
             The distortion coefficients
     """
     # Prepare chessboard 3D points
-    x, y = corner_dims
+    x, y = pattern_shape
     objp = np.zeros((x * y, 3), np.float32)
     objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
@@ -142,49 +142,49 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return prev_matches, curr_matches, new_points, new_descriptors
 
 
-def poseEstimation(prev_frame_points, curr_frame_points, prev_extrinsic_matrix, camera_intrinsic_matrix):
+def poseEstimation(corners, image, pattern_shape, side_length, camera_intrinsic_matrix, distortion_coefficients):
     """
-    Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
-    the transformation between origin and right frame coordinates
+    Finds the frame pose from the coordinates of the identified chess pattern, calculating the extrinsic and
+    projection matrices
 
-    :param prev_frame_points: Undistorted matched points from the previous frame
-    :param curr_frame_points: Undistorted matched points from the current frame
-    :param prev_extrinsic_matrix: 4x4 matrix converting origin coordinates to previous frame coordinates
-    :param camera_intrinsic_matrix: The intrinsic matrix of the camera
-    :return: The used left points,
-            The used right points,
-            The right frame extrinsic matrix,
-            The right frame projection matrix
+    :param corners: The identified chess pattern coordinates from OpenCV findChessboardCorners
+    :param image: The greyscale image corresponding to the identified corners
+    :param pattern_shape: The shape as a tuple (width, height) of the chess pattern
+    :param side_length: The real world side length of each square
+    :param camera_intrinsic_matrix: The calculated intrinsic camera matrix
+    :param distortion_coefficients: The calculated distortion coefficients
+    :return: The rotation vector
+            The translation vector
+            The extrinsic matrix,
+            The projection matrix
     """
-    # Find essential matrix and inliers
-    essential_matrix, mask_E = cv2.findEssentialMat(prev_frame_points,
-                                                    curr_frame_points,
-                                                    camera_intrinsic_matrix)
+    # Generate object points
+    x, y = pattern_shape
+    objp = np.zeros((x * y, 3), np.float32)
+    grid = np.mgrid[0:x, 0:y].T.reshape(-1, 2) * side_length
+    objp[:, 0] = grid[:, 0]
+    objp[:, 2] = grid[:, 1]
 
-    # Use the essential matrix and inliers to find the pose and new inliers
-    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
-                                       prev_frame_points,
-                                       curr_frame_points,
+    imgp = cv2.cornerSubPix(image,
+                            corners,
+                            (11, 11),
+                            (-1, -1),
+                            (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+
+    # Solve perspective from n points
+    success, rvec, tvec = cv2.solvePnP(np.array(objp),
+                                       np.array(imgp),
                                        camera_intrinsic_matrix,
-                                       mask=mask_E)
+                                       distortion_coefficients,
+                                       flags=cv2.SOLVEPNP_ITERATIVE)
 
-    # Create the 4x3 pose matrix from rotation and translation
-    pairwise_extrinsic_matrix = np.hstack([R, t])
+    if success:
+        R = cv2.Rodrigues(rvec)[0]
+        extrinsic_matrix = np.hstack((R, tvec))
+        projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix)
+        return rvec, tvec, extrinsic_matrix, projection_matrix
 
-    # Convert to homogeneous 4x4 transformation matrix
-    pairwise_extrinsic_matrix = np.vstack((pairwise_extrinsic_matrix, np.array([0, 0, 0, 1])))
-
-    # Take world coordinates to left frame then to right frame
-    extrinsic_matrix = np.matmul(pairwise_extrinsic_matrix, prev_extrinsic_matrix)
-
-    # Projection from world coordinates to right frame image coordinates
-    projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
-
-    # Usable points
-    usable_prev_points = prev_frame_points[mask_RP[:, 0] == 1]
-    usable_curr_points = curr_frame_points[mask_RP[:, 0] == 1]
-
-    return usable_prev_points, usable_curr_points, extrinsic_matrix, projection_matrix
+    return None
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -324,10 +324,12 @@ def process(video, path, lk_params, feature_params, flann_params):
 
     # Initialise pose estimation
     frame_corners = []
+    frames = []
 
     has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
     if has_chessboard:
         frame_corners.append(corners)
+        frames.append(prev_frame_grey)
 
     projections = []  # The first keyframe is added
     extrinsic_matrices = []
@@ -368,6 +370,7 @@ def process(video, path, lk_params, feature_params, flann_params):
             if has_chessboard:
                 # Append frame corners
                 frame_corners.append(corners)
+                frames.append(frame_grey)
 
                 # Calculate matches
                 print("\nFinding matches", end="...")
@@ -377,17 +380,6 @@ def process(video, path, lk_params, feature_params, flann_params):
                                                                                                     orb,
                                                                                                     flann_params)
                 print("found", len(prev_matches))
-
-                # # Pose estimation
-                # print("Finding inliers", end="...")
-                # prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
-                #                                                                                curr_matches,
-                #                                                                                prev_extrinsic,
-                #                                                                                intrinsic_matrix)
-                # print("found", len(prev_features))
-                #
-                # projections.append(projection)
-                # extrinsic_matrices.append(new_extrinsic)
 
                 # Manage tracks
                 print("Grouping points", end="...")
