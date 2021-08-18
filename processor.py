@@ -393,11 +393,6 @@ def process(video, path, lk_params, feature_params, flann_params):
                 print(len(popped_tracks) + len(tracks), "potential points")
 
                 # if new_popped_tracks:
-                #     # Triangulating points
-                #     print("Triangulating points", end="...")
-                #     triangulatePoints(popped_tracks, projections)
-                #     print(len(popped_tracks), "triangulated")
-                #
                 #     # Adjusting frame parameters and points
                 #     print("Adjusting frames and points", end="...")
                 #     points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
@@ -429,7 +424,8 @@ def process(video, path, lk_params, feature_params, flann_params):
 
     # Pose estimation
     print("Estimating frame positions...")
-    count = 0
+    frame_ID = 0
+
     for corners, frame in zip(frame_corners, frames):
         rvec, tvec, extrinsic_matrix, projection_matrix = poseEstimation(corners,
                                                                          frame,
@@ -442,25 +438,25 @@ def process(video, path, lk_params, feature_params, flann_params):
         tvecs.append(tvec)
         extrinsic_matrices.append(extrinsic_matrix)
         projections.append(projection_matrix)
-        print("Frame", count)
-        count += 1
+        print("Frame", frame_ID)
+        frame_ID += 1
     print("Done", end="\n\n")
+
+    extrinsic_matrices = bundleAdjuster.adjustPose(np.array(extrinsic_matrices),
+                                                   intrinsic_matrix,
+                                                   np.array(frame_corners).reshape((len(extrinsic_matrices) * 12, 2)))
+    projections = [np.dot(intrinsic_matrix, extrinsic) for extrinsic in extrinsic_matrices]
 
     # Triangulation
     print("Triangulating points", end="...")
     triangulatePoints(popped_tracks, projections)
     print("done", end="\n\n")
 
-    # # Include the points in the tracks not popped at the end
-    # print("\nTriangulating all points", end="...")
-    # triangulatePoints(popped_tracks, projections)
-    # print("done")
-    #
-    # toc = time.time()
-    #
-    # print(len(extrinsic_matrices), "frames used")
-    # print(toc - tic, "seconds\n")
-    #
+    toc = time.time()
+
+    print(len(extrinsic_matrices), "frames used")
+    print(toc - tic, "seconds\n")
+
     # print("adjusting points...")
     # tic = time.time()
     #
