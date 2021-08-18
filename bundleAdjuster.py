@@ -1,5 +1,4 @@
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
@@ -197,7 +196,6 @@ def reformatPoseResult(result, n_frames):
     rvecs = frame_params[:, :3]
     tvecs = frame_params[:, 3:6].reshape((n_frames, 3, 1))
     extrinsic_matrices = [np.hstack((cv2.Rodrigues(rvec)[0], tvec.reshape(3, 1))) for rvec, tvec in zip(rvecs, tvecs)]
-    print(extrinsic_matrices)
 
     return extrinsic_matrices
 
@@ -227,10 +225,6 @@ def adjustPose(frame_extrinsic_matrices, camera_intrinsic_matrix, points_2D):
 
     parameters = frameParameters(frame_extrinsic_matrices)
 
-    f0 = poseFun(parameters, camera_intrinsic_matrix, n_frames, frame_indices, point_indices, points_3D, points_2D)
-    plt.plot(f0)
-    plt.show()
-
     # A = pointAdjustmentSparsity(n_frames, pattern_size, frame_indices, point_indices)
     res = least_squares(poseFun,
                         parameters,
@@ -242,8 +236,5 @@ def adjustPose(frame_extrinsic_matrices, camera_intrinsic_matrix, points_2D):
                               point_indices,
                               points_3D,
                               points_2D))
-
-    plt.plot(res.fun)
-    plt.show()
 
     return reformatPoseResult(res, n_frames)
