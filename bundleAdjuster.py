@@ -1,3 +1,5 @@
+import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.optimize import least_squares
@@ -133,7 +135,7 @@ def frameParameters(frame_extrinsic_matrices):
     return np.hstack((rotation_vectors, translation_vectors)).reshape((len(frame_extrinsic_matrices) * 6,))
 
 
-def reformatPointResult(result, n_frames, n_points, point_indices):
+def reformatPointResult(result, n_frames, n_points):
     """
     Converts the new calculated points, camera rotations and translations into usable arrays
 
@@ -144,11 +146,7 @@ def reformatPointResult(result, n_frames, n_points, point_indices):
     :return: a 3D cartesian point array,
             a 3D cartesian frame position array
     """
-    costs = result.fun[np.arange(0, len(result.fun)) % 2 == 0]
     points = result.x[n_frames * 6:].reshape((n_points, 3))
-    point_cost = np.array([np.average(np.square(costs[point_indices == i])) for i in range(n_points)])
-    points = points[point_cost < 10]
-
     frames = result.x[:n_frames * 6].reshape((n_frames, 6))
 
     rotations = -frames[:, :3]
@@ -191,4 +189,61 @@ def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, p
                               point_indices,
                               points_2D))
 
-    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D), point_indices)
+    return reformatPointResult(res, len(frame_extrinsic_matrices), len(points_3D))
+
+
+def reformatPoseResult(result, n_frames):
+    frame_params = result.x.reshape((n_frames, 6))
+    rvecs = frame_params[:, :3]
+    tvecs = frame_params[:, 3:6].reshape((n_frames, 3, 1))
+    extrinsic_matrices = [np.hstack((cv2.Rodrigues(rvec)[0], tvec.reshape(3, 1))) for rvec, tvec in zip(rvecs, tvecs)]
+    print(extrinsic_matrices)
+
+    return extrinsic_matrices
+
+
+def poseFun(parameters, camera_intrinsic_matrix, n_frames, frame_indices, point_indices, points_3D, points_2D):
+    frame_params = parameters.reshape((n_frames, 6))
+
+    points_proj = project(points_3D[point_indices], frame_params[frame_indices], camera_intrinsic_matrix)
+
+    return (points_proj - points_2D).ravel()
+
+
+def adjustPose(frame_extrinsic_matrices, camera_intrinsic_matrix, points_2D):
+    # points_2D has n_frame copies of the chessboard
+    n_frames = len(frame_extrinsic_matrices)
+    pattern_size = int(len(points_2D) / n_frames)
+
+    # Setup up the stationary chessboard 3D points
+    points_3D = np.zeros((pattern_size, 3), np.float32)
+    grid = np.mgrid[0:4, 0:3].T.reshape(-1, 2) * 2
+    points_3D[:, 0] = grid[:, 0]
+    points_3D[:, 2] = grid[:, 1]
+
+    # Generating frame and point indices
+    frame_indices = np.repeat(np.arange(n_frames), pattern_size)
+    point_indices = np.repeat([np.arange(pattern_size)], n_frames, axis=0).reshape(pattern_size * n_frames)
+
+    parameters = frameParameters(frame_extrinsic_matrices)
+
+    f0 = poseFun(parameters, camera_intrinsic_matrix, n_frames, frame_indices, point_indices, points_3D, points_2D)
+    plt.plot(f0)
+    plt.show()
+
+    # A = pointAdjustmentSparsity(n_frames, pattern_size, frame_indices, point_indices)
+    res = least_squares(poseFun,
+                        parameters,
+                        verbose=2,
+                        ftol=1e-4,
+                        args=(camera_intrinsic_matrix,
+                              n_frames,
+                              frame_indices,
+                              point_indices,
+                              points_3D,
+                              points_2D))
+
+    plt.plot(res.fun)
+    plt.show()
+
+    return reformatPoseResult(res, n_frames)
