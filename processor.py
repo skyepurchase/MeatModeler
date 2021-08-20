@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 import pandas as pd
 from pyntcloud import PyntCloud
-from PIL import Image, ExifTags
 
 import bundleAdjuster
 from track import Track
@@ -27,41 +26,29 @@ def increaseContrast(frame):
     return cv2.cvtColor(lab_out, cv2.COLOR_Lab2BGR)
 
 
-def calibrate(images, corner_dims=(7, 7)):
+def calibrate(img_points, size, pattern_shape):
     """
     Takes specific chess board images and calibrates the camera appropriately
 
-    :param images: A list of different openCV image objects of a known chessboard
-    :param corner_dims: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
+    :param img_points: A list of the corners for each frame
+    :param size: The frame size
+    :param pattern_shape: A tuple the dimensions of the chessboard corners (standard board is (7, 7) and default input)
     :return: The intrinsic property matrix,
             The distortion coefficients
     """
     # Prepare chessboard 3D points
-    x, y = corner_dims
+    x, y = pattern_shape
     objp = np.zeros((x * y, 3), np.float32)
     objp[:, :2] = np.mgrid[0:x, 0:y].T.reshape(-1, 2)
 
-    # Arrays to store object and image points from all images
     obj_points = []
-    img_points = []
 
-    for img in images:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Find the chessboard corners
-        success, corners = cv2.findChessboardCorners(gray, corner_dims, None)
-
-        # If found, add object points, image points
-        if success:
-            obj_points.append(objp)
-            img_points.append(corners)
-
-    img = images[0]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    for _ in img_points:
+        obj_points.append(objp)
 
     success, matrix, distortion, _, _ = cv2.calibrateCamera(obj_points,
                                                             img_points,
-                                                            gray.shape[::-1],
+                                                            size,
                                                             None,
                                                             None)
 
@@ -69,82 +56,6 @@ def calibrate(images, corner_dims=(7, 7)):
         return matrix, distortion
 
     return None
-
-
-def intrinsicFromEXIF(image):
-    """
-    Generates an intrinsic matrix based on the EXIF data of an image.
-    A number of assumptions are used and no distortion coefficients can be generated.
-    The intrinsic matrix will now be in real world coordinates.
-
-    :param image: The path to an image taken from the used phone
-    :return: The intrinsic matrix
-    """
-
-    # Extract EXIF data
-    tags = {}
-    with open(image, 'rb') as image_file:
-        img = Image.open(image_file)
-        if hasattr(img, '_getexif'):
-            exif_info = img._getexif()
-            if exif_info is not None:
-                for tag, value in exif_info.items():
-                    tags[ExifTags.TAGS.get(tag, tag)] = value
-
-    # Extract focal length
-    focal_length = tags.get('FocalLength', (0, 1))
-
-    # Extract resolution
-    img_width = tags.get('XResolution', 0)
-    img_height = tags.get('YResolution', 0)
-    if img_width < img_height:
-        img_width, img_height = img_height, img_width
-
-    # Extract DPI resolutions
-    f_planeN_X, f_planeD_X = tags.get('FocalPlaneXResolution', (0, 1))
-    f_planeN_Y, f_planeD_Y = tags.get('FocalPlaneYResolution', (0, 1))
-    X_resolution = f_planeN_X / f_planeD_X
-    Y_resolution = f_planeN_Y / f_planeD_Y
-
-    # focal length is in mm, resolution in px / "
-    # fx and fy in px
-    fx = focal_length * X_resolution / 25.4
-    fy = focal_length * Y_resolution / 25.4
-
-    # Assume the principle point is at the centre
-    cx, cy = (img_width / 2, img_height / 2)
-
-    return np.hstack((np.array([fx, 0, cx]),
-                      np.array([0, fy, cy]),
-                      np.array([0, 0, 1])))
-
-
-def undistortFrame(frame, camera_matrix, distortion_coefficients):
-    """
-    Takes a frame and removes the distortion cause by the camera
-
-    :param frame: Frame with distortion
-    :param camera_matrix: The intrinsic matrix of the camera
-    :param distortion_coefficients: The distortion coefficients of the camera
-    :return: Frame without distortion, cropped to ROI
-    """
-    height, width = frame.shape[:2]
-
-    # Find the new camera matrix for the specific frame
-    optimal_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix,
-                                                               distortion_coefficients,
-                                                               (width, height),
-                                                               1,
-                                                               (width, height))
-
-    # Utilise this to get an undistorted frame
-    undistorted_frame = cv2.undistort(frame, camera_matrix, distortion_coefficients, None, optimal_camera_matrix)
-
-    # Crop the edges
-    x, y, w, h = roi
-    undistorted_frame = undistorted_frame[y:y + h, x:x + w]
-
-    return undistorted_frame
 
 
 def keyframeTracking(frame_grey, prev_frame_grey, prev_frame_points, accumulated_error, lk_params, feature_params,
@@ -231,49 +142,49 @@ def featureTracking(new_keyframe, prev_orb_points, prev_orb_descriptors, orb, fl
     return prev_matches, curr_matches, new_points, new_descriptors
 
 
-def poseEstimation(prev_frame_points, curr_frame_points, prev_extrinsic_matrix, camera_intrinsic_matrix):
+def poseEstimation(corners, image, pattern_shape, side_length, camera_intrinsic_matrix, distortion_coefficients):
     """
-    Takes the matches between two frames and the transformation between origin and left frame coordinates and finds
-    the transformation between origin and right frame coordinates
+    Finds the frame pose from the coordinates of the identified chess pattern, calculating the extrinsic and
+    projection matrices
 
-    :param prev_frame_points: Undistorted matched points from the previous frame
-    :param curr_frame_points: Undistorted matched points from the current frame
-    :param prev_extrinsic_matrix: 4x4 matrix converting origin coordinates to previous frame coordinates
-    :param camera_intrinsic_matrix: The intrinsic matrix of the camera
-    :return: The used left points,
-            The used right points,
-            The right frame extrinsic matrix,
-            The right frame projection matrix
+    :param corners: The identified chess pattern coordinates from OpenCV findChessboardCorners
+    :param image: The greyscale image corresponding to the identified corners
+    :param pattern_shape: The shape as a tuple (width, height) of the chess pattern
+    :param side_length: The real world side length of each square
+    :param camera_intrinsic_matrix: The calculated intrinsic camera matrix
+    :param distortion_coefficients: The calculated distortion coefficients
+    :return: The rotation vector
+            The translation vector
+            The extrinsic matrix,
+            The projection matrix
     """
-    # Find essential matrix and inliers
-    essential_matrix, mask_E = cv2.findEssentialMat(prev_frame_points,
-                                                    curr_frame_points,
-                                                    camera_intrinsic_matrix)
+    # Generate object points
+    x, y = pattern_shape
+    objp = np.zeros((x * y, 3), np.float32)
+    grid = np.mgrid[0:x, 0:y].T.reshape(-1, 2) * side_length
+    objp[:, 0] = grid[:, 0]
+    objp[:, 2] = grid[:, 1]
 
-    # Use the essential matrix and inliers to find the pose and new inliers
-    _, R, t, mask_RP = cv2.recoverPose(essential_matrix,
-                                       prev_frame_points,
-                                       curr_frame_points,
+    imgp = cv2.cornerSubPix(image,
+                            corners,
+                            (11, 11),
+                            (-1, -1),
+                            (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+
+    # Solve perspective from n points
+    success, rvec, tvec = cv2.solvePnP(np.array(objp),
+                                       np.array(imgp),
                                        camera_intrinsic_matrix,
-                                       mask=mask_E)
+                                       distortion_coefficients,
+                                       flags=cv2.SOLVEPNP_ITERATIVE)
 
-    # Create the 4x3 pose matrix from rotation and translation
-    pairwise_extrinsic_matrix = np.hstack([R, t])
+    if success:
+        R = cv2.Rodrigues(rvec)[0]
+        extrinsic_matrix = np.hstack((R, tvec))
+        projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix)
+        return rvec, tvec, extrinsic_matrix, projection_matrix
 
-    # Convert to homogeneous 4x4 transformation matrix
-    pairwise_extrinsic_matrix = np.vstack((pairwise_extrinsic_matrix, np.array([0, 0, 0, 1])))
-
-    # Take world coordinates to left frame then to right frame
-    extrinsic_matrix = np.matmul(pairwise_extrinsic_matrix, prev_extrinsic_matrix)
-
-    # Projection from world coordinates to right frame image coordinates
-    projection_matrix = np.dot(camera_intrinsic_matrix, extrinsic_matrix[:3])
-
-    # Usable points
-    usable_prev_points = prev_frame_points[mask_RP[:, 0] == 1]
-    usable_curr_points = curr_frame_points[mask_RP[:, 0] == 1]
-
-    return usable_prev_points, usable_curr_points, extrinsic_matrix, projection_matrix
+    return None
 
 
 def pointTracking(tracks, prev_keyframe_ID, feature_points, keyframe_ID, correspondents):
@@ -349,7 +260,7 @@ def triangulatePoints(tracks, projections):
         point = point[:, :3] / point[:, -1, np.newaxis]
         track.setPoint(point)
 
-
+        
 def managePoints(tracks):
     """
     Generates the correspondences between image coordinates, frame extrinsics and points
@@ -380,13 +291,12 @@ def managePoints(tracks):
     return points, coordinates, frame_indices, point_indices
 
 
-def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_params):
+def process(video, path, lk_params, feature_params, flann_params):
     """
     Takes a video of a food item and returns the 3D mesh of the food item
 
     :param video: The video to be converted to a 3D mesh
     :param path: The path to save images to
-    :param intrinsic_matrix: The intrinsic matrix for the video camera used
     :param lk_params: Lucas-Kanade feature tracking parameters
     :param feature_params: OpenCV GoodFeaturesToTrack parameters
     :param flann_params: FLANN feature matching parameters
@@ -401,9 +311,14 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
 
     # Retrieve first frame
     _, start_frame = cap.read()
+    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+    has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
+    while not has_chessboard:
+        _, start_frame = cap.read()
+        prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
+        has_chessboard, corners = cv2.findChessboardCorners(prev_frame_grey, (4, 3))
 
     # Initialise keyframe tracking
-    prev_frame_grey = cv2.cvtColor(increaseContrast(start_frame), cv2.COLOR_BGR2GRAY)
     prev_frame_points = cv2.goodFeaturesToTrack(prev_frame_grey,
                                                 mask=None,
                                                 **feature_params)
@@ -413,13 +328,12 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
     prev_orb_points, prev_orb_descriptors = orb.detectAndCompute(prev_frame_grey, None)
 
     # Initialise pose estimation
-    prev_extrinsic = np.eye(4, 4)  # The first keyframe is at origin and left of next frame
-
-    # But needs to be placed into world coordinates
-    original_projection = np.dot(intrinsic_matrix, prev_extrinsic[:3])
-
-    projections = [original_projection]  # The first keyframe is added
-    extrinsic_matrices = [prev_extrinsic]
+    frame_corners = [corners]
+    frames = [prev_frame_grey]
+    extrinsic_matrices = []
+    projections = []
+    rvecs = []
+    tvecs = []
 
     # Initialise point tracking
     tracks = []
@@ -451,67 +365,89 @@ def process(video, path, intrinsic_matrix, lk_params, feature_params, flann_para
                                                                                                threshold=0.1)
 
         if is_keyframe:
-            # Calculate matches
-            print("\nFinding matches", end="...")
-            prev_matches, curr_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
-                                                                                                prev_orb_points,
-                                                                                                prev_orb_descriptors,
-                                                                                                orb,
-                                                                                                flann_params)
-            print("found", len(prev_matches))
+            # Find chessboard corners
+            has_chessboard, corners = cv2.findChessboardCorners(frame_grey, (4, 3))
 
-            # Pose estimation
-            print("Finding inliers", end="...")
-            prev_features, curr_correspondents, new_extrinsic, projection = poseEstimation(prev_matches,
-                                                                                           curr_matches,
-                                                                                           prev_extrinsic,
-                                                                                           intrinsic_matrix)
-            print("found", len(prev_features))
+            if has_chessboard:
+                # Append frame corners
+                frame_corners.append(corners)
+                frames.append(frame_grey)
 
-            projections.append(projection)
-            extrinsic_matrices.append(new_extrinsic)
+                # Calculate matches
+                print("\nFinding matches", end="...")
+                prev_matches, curr_matches, prev_orb_points, prev_orb_descriptors = featureTracking(frame_grey,
+                                                                                                    prev_orb_points,
+                                                                                                    prev_orb_descriptors,
+                                                                                                    orb,
+                                                                                                    flann_params)
+                print("found", len(prev_matches))
 
-            # Manage tracks
-            print("Grouping points", end="...")
-            new_popped_tracks, tracks = pointTracking(tracks,
-                                                      prev_keyframe_ID,
-                                                      prev_features,
-                                                      keyframe_ID,
-                                                      curr_correspondents)
-            popped_tracks += new_popped_tracks
-            print(len(popped_tracks) + len(tracks), "potential points")
+                # Manage tracks
+                print("Grouping points", end="...")
+                new_popped_tracks, tracks = pointTracking(tracks,
+                                                          prev_keyframe_ID,
+                                                          prev_matches,
+                                                          keyframe_ID,
+                                                          curr_matches)
+                popped_tracks += new_popped_tracks
+                print(len(popped_tracks) + len(tracks), "potential points")
 
-            if new_popped_tracks:
-                # Triangulating points
-                print("Triangulating points", end="...")
-                triangulatePoints(popped_tracks, projections)
-                print(len(popped_tracks), "triangulated")
+                # if new_popped_tracks:
+                #     # Adjusting frame parameters and points
+                #     print("Adjusting frames and points", end="...")
+                #     points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+                #
+                #     adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                #                                                                       intrinsic_matrix,
+                #                                                                       np.array(points),
+                #                                                                       np.array(points_2d),
+                #                                                                       np.array(frame_indices),
+                #                                                                       np.array(point_indices))
+                #
+                #     projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
+                #     print("done")
 
-                # Adjusting frame parameters and points
-                print("Adjusting frames and points", end="...")
-                points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
-
-                adjusted_points, extrinsic_matrices = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-                                                                                  intrinsic_matrix,
-                                                                                  np.array(points),
-                                                                                  np.array(points_2d),
-                                                                                  np.array(frame_indices),
-                                                                                  np.array(point_indices))
-
-                projections = list(np.einsum("ij,...jk", intrinsic_matrix, np.array(extrinsic_matrices)[:, :3, :]))
-                print("done")
-
-            # Update variables
-            prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
-            prev_keyframe_ID = keyframe_ID
-            keyframe_ID += 1
+                # Update variables
+                # prev_extrinsic = extrinsic_matrices[-1]  # previous frame was last extrinsic frame
+                prev_keyframe_ID = keyframe_ID
+                keyframe_ID += 1
 
         success, frame = cap.read()
 
     # Add the remaining tracks which are implicitly popped
     popped_tracks += tracks
 
-    # Include the points in the tracks not popped at the end
+    # Calibration
+    print("\nCalibrating camera", end="...")
+    intrinsic_matrix, distortion_coefficients = calibrate(frame_corners, prev_frame_grey.shape[::-1], (4, 3))
+    print("done", end="\n\n")
+
+    # Pose estimation
+    print("Estimating frame positions...")
+    frame_ID = 0
+
+    for corners, frame in zip(frame_corners, frames):
+        rvec, tvec, extrinsic_matrix, projection_matrix = poseEstimation(corners,
+                                                                         frame,
+                                                                         (4, 3),
+                                                                         2,
+                                                                         intrinsic_matrix,
+                                                                         distortion_coefficients)
+
+        rvecs.append(rvec)
+        tvecs.append(tvec)
+        extrinsic_matrices.append(extrinsic_matrix)
+        projections.append(projection_matrix)
+        print("Frame", frame_ID)
+        frame_ID += 1
+    print("Done", end="\n\n")
+
+    extrinsic_matrices = bundleAdjuster.adjustPose(np.array(extrinsic_matrices),
+                                                   intrinsic_matrix,
+                                                   np.array(frame_corners).reshape((len(extrinsic_matrices) * 12, 2)))
+    projections = [np.dot(intrinsic_matrix, extrinsic) for extrinsic in extrinsic_matrices]
+
+    # Triangulation
     print("\nTriangulating all points", end="...")
     triangulatePoints(popped_tracks, projections)
     print("done")
