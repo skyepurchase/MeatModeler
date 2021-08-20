@@ -260,7 +260,7 @@ def triangulatePoints(tracks, projections):
         point = point[:, :3] / point[:, -1, np.newaxis]
         track.setPoint(point)
 
-
+        
 def managePoints(tracks):
     """
     Generates the correspondences between image coordinates, frame extrinsics and points
@@ -448,42 +448,42 @@ def process(video, path, lk_params, feature_params, flann_params):
     projections = [np.dot(intrinsic_matrix, extrinsic) for extrinsic in extrinsic_matrices]
 
     # Triangulation
-    print("Triangulating points", end="...")
+    print("\nTriangulating all points", end="...")
     triangulatePoints(popped_tracks, projections)
-    print("done", end="\n\n")
+    print("done")
 
     toc = time.time()
 
     print(len(extrinsic_matrices), "frames used")
     print(toc - tic, "seconds\n")
 
-    # print("adjusting points...")
-    # tic = time.time()
-    #
-    # points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
-    #
-    # adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
-    #                                                                   intrinsic_matrix,
-    #                                                                   np.array(points),
-    #                                                                   np.array(points_2d),
-    #                                                                   np.array(frame_indices),
-    #                                                                   np.array(point_indices))
-    #
-    # toc = time.time()
-    # print("adjustment complete.")
-    # print(len(adjusted_points), "points found")
-    # print(toc - tic, "seconds.\n")
-    #
-    # print("Saving point cloud...")
-    # tic = time.time()
-    #
-    # filename = path + "Cloud.ply"
-    # cloud = PyntCloud(pd.DataFrame(
-    #     data=adjusted_points,
-    #     columns=['x', 'y', 'z']
-    # ))
-    # cloud.to_file(filename)
-    #
-    # toc = time.time()
-    # print("Point cloud saved.")
-    # print(toc - tic)
+    print("adjusting points...")
+    tic = time.time()
+
+    points, points_2d, frame_indices, point_indices = managePoints(popped_tracks)
+
+    adjusted_points, adjusted_positions = bundleAdjuster.adjustPoints(np.array(extrinsic_matrices),
+                                                                      intrinsic_matrix,
+                                                                      np.array(points),
+                                                                      np.array(points_2d),
+                                                                      np.array(frame_indices),
+                                                                      np.array(point_indices))
+
+    toc = time.time()
+    print("adjustment complete.")
+    print(len(adjusted_points), "points found")
+    print(toc - tic, "seconds.\n")
+
+    print("Saving point cloud...")
+    tic = time.time()
+
+    filename = path + "Cloud.ply"
+    cloud = PyntCloud(pd.DataFrame(
+        data=adjusted_points,
+        columns=['x', 'y', 'z']
+    ))
+    cloud.to_file(filename)
+
+    toc = time.time()
+    print("Point cloud saved.")
+    print(toc - tic)

@@ -47,7 +47,7 @@ def project(points, frame_params, camera_matrix):
     points_proj = np.einsum("ij,...j", camera_matrix, points_proj)
 
     # Normalise points
-    points_proj = -points_proj[:, :2] / points_proj[:, 2, np.newaxis]
+    points_proj = points_proj[:, :2] / points_proj[:, -1, np.newaxis]
 
     return points_proj
 
@@ -141,17 +141,20 @@ def reformatPointResult(result, n_frames, n_points):
     :param result: Least squares regression result
     :param n_frames: The number of frames
     :param n_points: The number of points
-    :param point_indices: An array of which 3D point corresponds to which 2D error
     :return: a 3D cartesian point array,
             a 3D cartesian frame position array
     """
     points = result.x[n_frames * 6:].reshape((n_points, 3))
     frames = result.x[:n_frames * 6].reshape((n_frames, 6))
 
-    rotations = -frames[:, :3]
-    translations = -frames[:, 3:]
-    positions = rotate(translations, rotations)
-    return points, positions
+    rvecs = frames[:, :3]
+    tvecs = frames[:, 3:]
+
+    extrinsics = [np.vstack((np.hstack((cv2.Rodrigues(rvec)[0], tvec.reshape(3, 1))),
+                             [0, 0, 0, 1]))
+                  for rvec, tvec in zip(rvecs, tvecs)]
+
+    return points, extrinsics
 
 
 def adjustPoints(frame_extrinsic_matrices, camera_intrinsic_matrix, points_3D, points_2D, frame_indices, point_indices):
